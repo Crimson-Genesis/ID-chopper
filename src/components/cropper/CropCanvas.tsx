@@ -1,60 +1,51 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { RenderedPage, CropBox, CardPreset } from '../../types/card';
+import { AppFile, CropBox, CardPreset, CachedCropItem } from '../../types/card';
 import { 
-  ArrowLeftRight, 
-  RotateCcw, 
-  Lock, 
-  Unlock, 
   ChevronLeft, 
-  ChevronRight,
-  Sliders,
-  Move
+  ChevronRight, 
+  FileText, 
+  Image as ImageIcon, 
+  Trash2, 
+  PlusCircle, 
+  CheckCircle2
 } from 'lucide-react';
 
 interface CropCanvasProps {
-  pages: RenderedPage[];
+  activeFile: AppFile;
   activePageNum: number;
   onSelectPage: (pageNum: number) => void;
-  frontBox: CropBox;
-  backBox: CropBox;
+  frontCrop: CachedCropItem | null;
+  backCrop: CachedCropItem | null;
   hasBackSide: boolean;
   onFrontBoxChange: (box: CropBox) => void;
   onBackBoxChange: (box: CropBox) => void;
-  onHasBackSideChange: (hasBack: boolean) => void;
+  onSelectFront: () => void;
+  onSelectBack: () => void;
+  onClearCrops: () => void;
   selectedPreset: CardPreset;
-  onResetToPreset: () => void;
-  onUpdatePresetDimensions?: (widthMm: number, heightMm: number) => void;
+  lockRatio: boolean;
 }
 
 type HandleType = 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'e' | 'w' | 'move' | null;
 
-const ASPECT_PRESETS = [
-  { label: 'CR80 ID (85.6 x 54 mm)', ratio: 85.6 / 53.98, wMm: 85.6, hMm: 53.98 },
-  { label: 'Visiting Card (90 x 50 mm)', ratio: 90 / 50, wMm: 90, hMm: 50 },
-  { label: 'Square Pass (60 x 60 mm)', ratio: 1.0, wMm: 60, hMm: 60 },
-  { label: 'Doc Slip (100 x 70 mm)', ratio: 100 / 70, wMm: 100, hMm: 70 },
-];
-
 export const CropCanvas: React.FC<CropCanvasProps> = ({
-  pages,
+  activeFile,
   activePageNum,
   onSelectPage,
-  frontBox,
-  backBox,
+  frontCrop,
+  backCrop,
   hasBackSide,
   onFrontBoxChange,
   onBackBoxChange,
-  onHasBackSideChange,
+  onSelectFront,
+  onSelectBack,
+  onClearCrops,
   selectedPreset,
-  onResetToPreset,
-  onUpdatePresetDimensions,
+  lockRatio,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const [activeSide, setActiveSide] = useState<'front' | 'back'>('front');
-  const [lockRatio, setLockRatio] = useState<boolean>(true);
-  const [activeAspectPreset, setActiveAspectPreset] = useState<number>(0);
 
   // Drag interaction state
   const [dragState, setDragState] = useState<{
@@ -65,9 +56,20 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     origBox: CropBox;
   } | null>(null);
 
-  const activePage = pages.find((p) => p.pageNumber === activePageNum) || pages[0];
+  const isFrontOnCurrentPage = 
+    frontCrop !== null && 
+    frontCrop.fileId === activeFile.id && 
+    frontCrop.pageNumber === activePageNum;
 
-  // Draw the current page on the background canvas
+  const isBackOnCurrentPage = 
+    backCrop !== null && 
+    hasBackSide &&
+    backCrop.fileId === activeFile.id && 
+    backCrop.pageNumber === activePageNum;
+
+  const activePage = activeFile.pages.find((p) => p.pageNumber === activePageNum) || activeFile.pages[0];
+
+  // Draw current page on the canvas
   useEffect(() => {
     if (!canvasRef.current || !activePage) return;
     const canvas = canvasRef.current;
@@ -79,35 +81,40 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     }
   }, [activePage]);
 
-  // Handle swapping front and back boxes
-  const handleSwapBoxes = () => {
-    const temp = { ...frontBox };
-    onFrontBoxChange({ ...backBox });
-    onBackBoxChange({ ...temp });
-  };
+  // PDF Single-Scroll Gravity Lock: Exactly 1 scroll event changes 1 page
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || activeFile.type !== 'pdf' || activeFile.numPages <= 1) return;
 
-  // Change Aspect Ratio Preset
-  const handleApplyAspectPreset = (idx: number) => {
-    setActiveAspectPreset(idx);
-    setLockRatio(true);
-    const preset = ASPECT_PRESETS[idx];
-    if (onUpdatePresetDimensions) {
-      onUpdatePresetDimensions(preset.wMm, preset.hMm);
-    }
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const containerRatio = rect.width / rect.height;
-      const targetPercentRatio = preset.ratio / containerRatio;
+    let isScrollLocked = false;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (isScrollLocked) return;
 
-      if (activeSide === 'front') {
-        const newH = Math.min(100 - frontBox.y, frontBox.width / targetPercentRatio);
-        onFrontBoxChange({ ...frontBox, height: newH });
-      } else {
-        const newH = Math.min(100 - backBox.y, backBox.width / targetPercentRatio);
-        onBackBoxChange({ ...backBox, height: newH });
+      if (e.deltaY > 15) {
+        if (activePageNum < activeFile.numPages) {
+          isScrollLocked = true;
+          onSelectPage(activePageNum + 1);
+          setTimeout(() => {
+            isScrollLocked = false;
+          }, 350);
+        }
+      } else if (e.deltaY < -15) {
+        if (activePageNum > 1) {
+          isScrollLocked = true;
+          onSelectPage(activePageNum - 1);
+          setTimeout(() => {
+            isScrollLocked = false;
+          }, 350);
+        }
       }
-    }
-  };
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, [activeFile, activePageNum, onSelectPage]);
 
   // Pointer Down Handler
   const handlePointerDown = (
@@ -117,15 +124,16 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   ) => {
     e.stopPropagation();
     e.preventDefault();
-    setActiveSide(target);
 
-    const box = target === 'front' ? frontBox : backBox;
+    const cropItem = target === 'front' ? frontCrop : backCrop;
+    if (!cropItem) return;
+
     setDragState({
       target,
       handle,
       startX: e.clientX,
       startY: e.clientY,
-      origBox: { ...box },
+      origBox: { ...cropItem.box },
     });
   };
 
@@ -140,7 +148,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       const { target, handle, origBox } = dragState;
       let newBox = { ...origBox };
 
-      const activeRatio = ASPECT_PRESETS[activeAspectPreset]?.ratio || (85.6 / 53.98);
+      const activeRatio = selectedPreset.dimensions.widthMm / selectedPreset.dimensions.heightMm;
       const containerRatio = rect.width / rect.height;
       const targetPercentRatio = activeRatio / containerRatio;
 
@@ -167,18 +175,26 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             newH = newW / targetPercentRatio;
           }
         }
-        if (handle.includes('s') && !lockRatio) {
+        if (handle.includes('s')) {
           newH = Math.max(5, origBox.height + dy);
+          if (lockRatio) {
+            newW = newH * targetPercentRatio;
+          }
         }
-        if (handle.includes('n') && !lockRatio) {
+        if (handle.includes('n')) {
           const maxTop = origBox.y + origBox.height - 5;
           newY = Math.min(maxTop, Math.max(0, origBox.y + dy));
           newH = origBox.height - (newY - origBox.y);
+          if (lockRatio) {
+            newW = newH * targetPercentRatio;
+          }
         }
 
-        // Clamp boundaries
-        newW = Math.min(100 - newX, newW);
-        newH = Math.min(100 - newY, newH);
+        // Clamping inside [0, 100]
+        if (newX + newW > 100) newW = 100 - newX;
+        if (newY + newH > 100) newH = 100 - newY;
+        if (newX < 0) { newX = 0; }
+        if (newY < 0) { newY = 0; }
 
         newBox = {
           ...origBox,
@@ -208,21 +224,13 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [dragState, lockRatio, activeAspectPreset, onFrontBoxChange, onBackBoxChange]);
+  }, [dragState, lockRatio, selectedPreset, onFrontBoxChange, onBackBoxChange]);
 
   const renderCropBoxOverlay = (
     box: CropBox,
     target: 'front' | 'back',
-    isShownOnThisPage: boolean
+    isFront: boolean
   ) => {
-    if (!isShownOnThisPage) return null;
-
-    const isFront = target === 'front';
-    const isSelected = activeSide === target;
-    const borderColor = isFront ? 'border-sky-500' : 'border-emerald-500';
-    const bgBadge = isFront ? 'bg-sky-600 text-white' : 'bg-emerald-600 text-white';
-    const handleColor = isFront ? 'bg-sky-400' : 'bg-emerald-400';
-
     return (
       <div
         key={target}
@@ -232,27 +240,34 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           width: `${box.width}%`,
           height: `${box.height}%`,
         }}
-        className={`absolute border-2 ${borderColor} shadow-2xl cursor-move transition-shadow ${
-          isSelected ? 'ring-2 ring-white/50 shadow-cyan-500/30' : 'opacity-90'
+        className={`absolute z-10 transition-shadow select-none ${
+          isFront
+            ? 'border-2 border-white shadow-[0_0_15px_rgba(255,255,255,0.4)]'
+            : 'border-2 border-dashed border-zinc-400 shadow-[0_0_15px_rgba(150,150,150,0.3)]'
         }`}
-        onPointerDown={(e) => handlePointerDown(e, target, 'move')}
       >
-        {/* Label Badge */}
+        {/* Transparent movable area */}
         <div
-          className={`absolute -top-7 left-0 px-2 py-0.5 rounded text-[11px] font-bold tracking-wider uppercase shadow-md flex items-center space-x-1 ${bgBadge}`}
+          className="w-full h-full cursor-move bg-white/5 hover:bg-white/10 transition-colors"
+          onPointerDown={(e) => handlePointerDown(e, target, 'move')}
+        />
+
+        {/* Top-left identification tag */}
+        <div
+          className={`absolute -top-6 left-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center space-x-1 ${
+            isFront ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-200 border border-zinc-700'
+          }`}
         >
           <span>{isFront ? 'Front Card' : 'Back Card'}</span>
-          <span className="text-[9px] opacity-80">
-            {lockRatio ? `(${ASPECT_PRESETS[activeAspectPreset]?.label.split(' ')[0]})` : '(Freeform)'}
-          </span>
+          <span className="text-[9px] opacity-75">({selectedPreset.shortName})</span>
         </div>
 
         {/* Dimension indicator on bottom */}
-        <div className="absolute -bottom-6 right-0 px-1.5 py-0.5 rounded bg-slate-900/90 text-slate-300 text-[10px] font-mono border border-slate-700">
+        <div className="absolute -bottom-6 right-0 px-1.5 py-0.5 rounded bg-black text-white text-[10px] font-mono border border-zinc-700">
           {selectedPreset.dimensions.widthMm} x {selectedPreset.dimensions.heightMm} mm
         </div>
 
-        {/* 8 Resize Handles */}
+        {/* 8 Resize Handles in crisp monochrome */}
         {(['nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'] as HandleType[]).map((handle) => {
           let posClass = '';
           let cursorClass = '';
@@ -295,7 +310,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           return (
             <div
               key={handle}
-              className={`absolute w-3.5 h-3.5 rounded-full border border-white ${handleColor} ${posClass} ${cursorClass} shadow-md z-20`}
+              className={`absolute w-3.5 h-3.5 rounded-full border border-black bg-white ${posClass} ${cursorClass} shadow-md z-20 hover:scale-125 transition-transform`}
               onPointerDown={(e) => handlePointerDown(e, target, handle)}
             />
           );
@@ -305,159 +320,129 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   };
 
   return (
-    <div className="flex flex-col space-y-4 w-full">
-      {/* Top Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800">
-        {/* Multi-page navigation */}
-        {pages.length > 1 ? (
-          <div className="flex items-center space-x-2">
-            <span className="text-xs text-slate-400 font-medium">Viewing Page:</span>
-            <button
-              onClick={() => onSelectPage(Math.max(1, activePageNum - 1))}
-              disabled={activePageNum === 1}
-              className="p-1 rounded bg-slate-800 text-slate-300 disabled:opacity-40 hover:bg-slate-700"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-xs font-bold text-white px-2">
-              {activePageNum} of {pages.length}
-            </span>
-            <button
-              onClick={() => onSelectPage(Math.min(pages.length, activePageNum + 1))}
-              disabled={activePageNum === pages.length}
-              className="p-1 rounded bg-slate-800 text-slate-300 disabled:opacity-40 hover:bg-slate-700"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+    <div className="flex flex-col space-y-3 w-full">
+      {/* Viewport Top Header & Action Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2.5 rounded-2xl bg-zinc-900 border border-zinc-800 text-xs">
+        {/* Left: Active File Info & Page Navigator (with gravity scroll note) */}
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 text-white font-semibold">
+            {activeFile.type === 'pdf' ? (
+              <FileText className="w-4 h-4 text-white" />
+            ) : (
+              <ImageIcon className="w-4 h-4 text-white" />
+            )}
+            <span className="truncate max-w-[220px]">{activeFile.name}</span>
           </div>
-        ) : (
-          <div className="flex items-center space-x-2 text-xs text-slate-400">
-            <Move className="w-3.5 h-3.5 text-teal-400" />
-            <span>Interactive Crop Canvas</span>
-          </div>
-        )}
 
-        {/* Ratio Preset Picker */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto">
-          {ASPECT_PRESETS.map((ap, idx) => (
-            <button
-              key={ap.label}
-              onClick={() => handleApplyAspectPreset(idx)}
-              className={`px-2 py-1 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap ${
-                lockRatio && activeAspectPreset === idx
-                  ? 'bg-teal-500/20 text-teal-300 border-teal-500/40'
-                  : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-slate-300'
-              }`}
-            >
-              {ap.label.split(' ')[0]}
-            </button>
-          ))}
-          <button
-            onClick={() => setLockRatio(!lockRatio)}
-            className={`flex items-center space-x-1 px-2 py-1 rounded-lg border text-xs font-medium transition-colors ${
-              !lockRatio
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                : 'bg-slate-800 text-slate-400 border-slate-700'
-            }`}
-            title="Freeform unlocked mode"
-          >
-            {lockRatio ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-            <span>Freeform</span>
-          </button>
+          {activeFile.type === 'pdf' && activeFile.numPages > 1 ? (
+            <div className="flex items-center space-x-1.5 pl-2 border-l border-zinc-800">
+              <button
+                onClick={() => onSelectPage(Math.max(1, activePageNum - 1))}
+                disabled={activePageNum === 1}
+                className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-white disabled:opacity-40 transition-colors"
+                title="Previous Page (or scroll up)"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="font-mono text-white font-bold px-1.5">
+                Page {activePageNum} of {activeFile.numPages}
+              </span>
+              <button
+                onClick={() => onSelectPage(Math.min(activeFile.numPages, activePageNum + 1))}
+                disabled={activePageNum === activeFile.numPages}
+                className="p-1 rounded bg-zinc-800 hover:bg-zinc-700 text-white disabled:opacity-40 transition-colors"
+                title="Next Page (or scroll down)"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <span className="hidden sm:inline-block text-[10px] text-zinc-500 pl-1 font-mono">
+                [1 scroll = 1 page]
+              </span>
+            </div>
+          ) : (
+            <span className="text-[10px] text-zinc-500 font-mono pl-2 border-l border-zinc-800">
+              {activeFile.type === 'pdf' ? 'Single Page PDF' : 'Image File'}
+            </span>
+          )}
         </div>
 
-        {/* Controls: Swap, Dual-Side Toggle, Reset */}
+        {/* Right: Crop Selection Controls (Clear, Select Front, Select Back) */}
         <div className="flex items-center space-x-2">
+          {/* Clear Button */}
+          <button
+            onClick={onClearCrops}
+            disabled={!frontCrop && !backCrop}
+            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 border border-zinc-800 text-xs font-medium transition-colors"
+            title="Remove all crop boxes and clear cache"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Clear</span>
+          </button>
+
+          {/* Select Front Button */}
+          <button
+            onClick={onSelectFront}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+              isFrontOnCurrentPage
+                ? 'bg-white text-black border-white shadow-sm ring-1 ring-white/20'
+                : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
+            }`}
+            title="Position or override Front crop box on this page"
+          >
+            {isFrontOnCurrentPage ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-black" />
+            ) : (
+              <PlusCircle className="w-3.5 h-3.5" />
+            )}
+            <span>{isFrontOnCurrentPage ? 'Front Selected' : 'Select Front'}</span>
+          </button>
+
+          {/* Select Back Button */}
           {hasBackSide && (
             <button
-              onClick={handleSwapBoxes}
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition-colors"
-              title="Swap Front and Back crop areas"
+              onClick={onSelectBack}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                isBackOnCurrentPage
+                  ? 'bg-zinc-300 text-black border-zinc-300 shadow-sm'
+                  : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
+              }`}
+              title="Position or override Back crop box on this page"
             >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              <span>Swap Sides</span>
+              {isBackOnCurrentPage ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-black" />
+              ) : (
+                <PlusCircle className="w-3.5 h-3.5" />
+              )}
+              <span>{isBackOnCurrentPage ? 'Back Selected' : 'Select Back'}</span>
             </button>
           )}
-
-          <button
-            onClick={() => onHasBackSideChange(!hasBackSide)}
-            className={`flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-              hasBackSide
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                : 'bg-slate-800 text-slate-400 border-slate-700'
-            }`}
-          >
-            <span>{hasBackSide ? 'Dual Sides' : 'Front Only'}</span>
-          </button>
-
-          <button
-            onClick={onResetToPreset}
-            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 text-xs font-medium transition-colors"
-            title="Reset crop boxes to preset coordinates"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset</span>
-          </button>
         </div>
       </div>
 
-      {/* Interactive Crop Viewport */}
-      <div className="relative w-full rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center p-2 sm:p-4 min-h-[480px]">
+      {/* Main Interactive Viewport (with gravity wheel scroll) */}
+      <div 
+        ref={viewportRef}
+        className="relative w-full rounded-2xl bg-black border border-zinc-800 overflow-hidden flex items-center justify-center p-3 sm:p-5 min-h-[460px] max-h-[62vh]"
+      >
         <div
           ref={containerRef}
-          className="relative max-w-full max-h-[75vh] shadow-2xl select-none"
+          className="relative max-w-full max-h-[60vh] shadow-2xl select-none"
         >
           {/* Background rendered document canvas */}
           <canvas
             ref={canvasRef}
-            className="block max-w-full max-h-[75vh] h-auto w-auto rounded-lg border border-slate-800"
+            className="block max-w-full max-h-[60vh] h-auto w-auto rounded-lg border border-zinc-800"
           />
 
           {/* Overlays: Front & Back crop boxes */}
-          {renderCropBoxOverlay(
-            frontBox,
-            'front',
-            frontBox.pageNumber === activePageNum
+          {isFrontOnCurrentPage && frontCrop && (
+            renderCropBoxOverlay(frontCrop.box, 'front', true)
           )}
 
-          {hasBackSide &&
-            renderCropBoxOverlay(
-              backBox,
-              'back',
-              backBox.pageNumber === activePageNum
-            )}
-        </div>
-      </div>
-
-      {/* Guide Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-400 px-2 gap-2">
-        <div className="flex items-center space-x-2">
-          {frontBox.pageNumber === activePageNum && (
-            <span className="flex items-center space-x-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-sky-500 inline-block" />
-              <span>Front Box (Page {frontBox.pageNumber})</span>
-            </span>
-          )}
-          {hasBackSide && backBox.pageNumber === activePageNum && (
-            <span className="flex items-center space-x-1.5 ml-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-              <span>Back Box (Page {backBox.pageNumber})</span>
-            </span>
-          )}
-          {frontBox.pageNumber !== activePageNum && (!hasBackSide || backBox.pageNumber !== activePageNum) && (
-            <span className="text-amber-400 text-[11px]">
-              No crop box currently assigned to Page {activePageNum}. Use the page buttons below to assign Front or Back to this page.
-            </span>
+          {isBackOnCurrentPage && backCrop && (
+            renderCropBoxOverlay(backCrop.box, 'back', false)
           )}
         </div>
-        <p className="text-[11px] text-slate-500 flex items-center space-x-1">
-          <Sliders className="w-3.5 h-3.5 text-teal-400" />
-          <span>
-            {selectedPreset.isCustom
-              ? 'Custom Mode: Move and resize the boxes freely to capture any card size.'
-              : 'Move boxes or drag handles to adjust. Click Freeform for custom dimensions.'}
-          </span>
-        </p>
       </div>
     </div>
   );

@@ -23,7 +23,6 @@ export interface CardPreset {
   authority: string;
   portalUrl: string;
   description: string;
-  sampleFileName: string;
   hasDualSides: boolean;
   isCustom?: boolean;
   defaultFrontBox: CropBox;
@@ -54,4 +53,22 @@ export interface RenderedPage {
   width: number;
   height: number;
   dataUrl?: string;
+}
+
+export interface AppFile {
+  id: string;
+  name: string;
+  type: 'pdf' | 'image';
+  sizeBytes?: number;
+  numPages: number;
+  pages: RenderedPage[];
+}
+
+export interface CachedCropItem {
+  fileId: string;
+  fileName: string;
+  pageNumber: number;
+  box: CropBox;
+  canvas: HTMLCanvasElement;
+  dataUrl: string;
 }

@@ -59,31 +59,66 @@ Official Indian government portals issue e-cards as full A4 (or multi-page) docu
 
 ---
 
-## Specimen Directory (`ex/`)
+## Key Features
 
-The `ex/` directory contains synthetic specimen documents for all 12 cards that replicate the real-world A4 layout, complete with headers, instructions, and card cutout areas for testing:
-
-- `ex/01_aadhaar_card_specimen.png` and `.pdf`
-- `ex/02_apaar_id_specimen.png` and `.pdf`
-- `ex/03_abc_card_specimen.png` and `.pdf`
-- `ex/04_ayushman_pmjay_specimen.png` and `.pdf`
-- `ex/05_driving_licence_specimen.png` and `.pdf`
-- `ex/06_eshram_card_specimen.png` and `.pdf`
-- `ex/07_family_id_specimen.png` and `.pdf`
-- `ex/08_farmer_id_specimen.png` and `.pdf`
-- `ex/09_health_id_abha_specimen.png` and `.pdf`
-- `ex/10_ration_card_specimen.png` and `.pdf`
-- `ex/11_pan_card_specimen.png` and `.pdf`
-- `ex/12_voter_id_epic_specimen.png` and `.pdf`
-
-*(All specimen files use fictional dummy data to ensure 100% privacy and legal compliance).*
+- **Unified File Manager**: Import multiple PDFs and images at once without file type segregation.
+- **Smart Crop Cache**: Extracted Front and Back crops are preserved in memory across file switching, allowing you to crop Front from one document and Back from another document.
+- **Single-Scroll Gravity Lock**: Multi-page PDFs snap cleanly exactly one page per scroll gesture with responsive page counters.
+- **Instant Save Location Prompt**: Uses the modern Web File System Access API (`showSaveFilePicker`) to prompt for the exact directory and filename before saving, with seamless fallback for all browsers.
+- **Monochrome Dark Aesthetics**: Minimalist high-contrast studio theme built strictly with modern SVG vector icons (zero emojis).
+- **Password-Protected PDFs**: Client-side decryption for e-Aadhaar and password-locked government documents.
+- **Custom Card Dimension Presets**: Supports all 12 official Indian IDs plus arbitrary custom card formats (school IDs, office passes, driver cards) with custom millimeter sizing.
 
 ---
 
-## Development Environment (NixOS)
+## Deployment Guide
 
-This project runs inside a NixOS dev shell:
+This project compiles to a pure static application (`dist/`) that can be hosted on **Vercel**, **Netlify**, **GitHub Pages**, or **Cloudflare Pages** with zero backend infrastructure.
+
+### Option 1: Deploy to Vercel via Git (Recommended)
+
+1. Push your repository to GitHub / GitLab / Bitbucket:
+   ```bash
+   git add .
+   git commit -m "feat: complete Indian ID card cropper studio"
+   git push origin main
+   ```
+2. Log in to [Vercel](https://vercel.com).
+3. Click **Add New...** -> **Project**.
+4. Import your Git repository.
+5. Vercel automatically detects the Vite configuration:
+   - **Framework Preset**: `Vite`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+6. Click **Deploy**. Your site will be live on a fast global edge CDN in under 1 minute.
+
+### Option 2: Deploy to Vercel via CLI
+
+Inside the NixOS development environment:
 ```bash
-nix develop /etc/nixos#all-linux --command bash -c "<command>"
+# In NixOS dev shell:
+nix develop /etc/nixos#all-linux --command bash -c "npx -y vercel"
 ```
-See [AGENTS.md](file:///mnt/data/projects/photo_croper/AGENTS.md) for full instructions.
+Follow the interactive prompts to log in and deploy. For production deployment:
+```bash
+nix develop /etc/nixos#all-linux --command bash -c "npx -y vercel --prod"
+```
+
+---
+
+## Local Development (NixOS)
+
+This project runs inside the NixOS dev shell:
+
+```bash
+# Start local development server
+nix develop /etc/nixos#all-linux --command bash -c "npm run dev"
+
+# Build production bundle
+nix develop /etc/nixos#all-linux --command bash -c "npm run build"
+
+# Preview production build locally
+nix develop /etc/nixos#all-linux --command bash -c "npm run preview"
+```
+See [AGENTS.md](file:///mnt/data/projects/photo_croper/AGENTS.md) for environment guidelines and style rules.
+

@@ -1,5 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import { RenderedPage } from '../types/card';
+import { RenderedPage, AppFile } from '../types/card';
 
 // Configure local pdfjs worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -171,6 +171,33 @@ export async function loadMultipleFiles(
     isPdf: files.some(isPdf),
     name: combinedName,
   };
+}
+
+export async function loadSingleAppFile(
+  source: File | string,
+  customName?: string,
+  password?: string
+): Promise<AppFile> {
+  const fileName = customName || (typeof source === 'string' ? source.split('/').pop() || 'Document' : source.name);
+  const sizeBytes = typeof source === 'string' ? undefined : (source as File).size;
+  const res = await loadDocument(source, fileName, password);
+  return {
+    id: `${fileName}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    name: res.name,
+    type: res.isPdf ? 'pdf' : 'image',
+    sizeBytes,
+    numPages: res.numPages,
+    pages: res.pages,
+  };
+}
+
+export async function loadAppFiles(files: File[]): Promise<AppFile[]> {
+  const loaded: AppFile[] = [];
+  for (const f of files) {
+    const item = await loadSingleAppFile(f);
+    loaded.push(item);
+  }
+  return loaded;
 }
 
 async function renderImageToPage(imgSrc: string, pageNumber: number): Promise<RenderedPage> {

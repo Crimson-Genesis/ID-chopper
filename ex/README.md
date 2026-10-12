@@ -1,39 +1,39 @@
-# Specimen Files (`ex/`)
+# Indian ID Card Cutout Geometry and Reference Standards
 
-This directory contains synthetic specimen test documents in both **PNG** and **PDF** formats for all 12 Indian identity cards.
-
-Each document simulates an official A4 document (1240 x 1754 px at 150 DPI) containing:
-1. Government department header banner.
-2. Official dispatch notices, instructions, and text.
-3. Centered/bottom ID Card section with Front and Back cards enclosed within red cut guidelines.
-4. Dummy personal details, sample photo silhouettes, and test QR codes.
+This reference guide documents the official dimensions and cutout coordinate standards for all 12 supported Indian identity cards.
 
 ---
 
-## Specimen Inventory and Card Coordinates
+## Standard Card Geometry (ISO/IEC 7810 ID-1 / CR80)
 
-| File Name (PNG and PDF) | Document Type | Card Section Y-Range | Card Layout |
+| Parameter | Metric | Imperial | Digital Print (300 DPI) |
 |---|---|---|---|
-| `01_aadhaar_card_specimen` | e-Aadhaar A4 Sheet | `y: 1150 - 1478` | Dual: Front (Left) and Back (Right) |
-| `02_apaar_id_specimen` | DigiLocker APAAR Registry | `y: 1050 - 1378` | Dual: Front and Back |
-| `03_abc_card_specimen` | Academic Bank of Credits Sheet | `y: 1080 - 1408` | Dual: Front and Back |
-| `04_ayushman_pmjay_specimen` | AB-PMJAY Golden Card Sheet | `y: 1050 - 1378` | Dual: Front and Back |
-| `05_driving_licence_specimen` | Sarathi Form 7 DL Sheet | `y: 1080 - 1408` | Dual: Front and Back |
-| `06_eshram_card_specimen` | e-Shram UAN Registration Sheet | `y: 1050 - 1378` | Dual: Front and Back |
-| `07_family_id_specimen` | Parivar Pehchan Patra (PPP) Sheet | `y: 1060 - 1388` | Dual: Front and Back |
-| `08_farmer_id_specimen` | AgriStack / PM-Kisan Digital ID | `y: 1080 - 1408` | Dual: Front and Back |
-| `09_health_id_abha_specimen` | ABDM ABHA Card Document | `y: 1060 - 1388` | Dual: Front and Back |
-| `10_ration_card_specimen` | NFSA ePDS Ration Card Sheet | `y: 1080 - 1408` | Dual: Front and Back |
-| `11_pan_card_specimen` | Income Tax e-PAN Slip | `y: 1120 - 1448` | Dual: Front and Back |
-| `12_voter_id_epic_specimen` | Election Commission e-EPIC Sheet | `y: 1100 - 1428` | Dual: Front and Back |
-
-### Card Geometry within Specimen:
-- **Card Width (`cw`)**: 520 px
-- **Card Height (`ch`)**: 328 px (Aspect ratio approx 1.585 : 1 matching ISO CR80)
-- **Gap between Front and Back**: 20 px
-- **Total Card Width**: 1060 px (Centered horizontally on 1240 px canvas: `x = 90` to `x = 1150`)
+| **Width** | 85.60 mm | 3.370 in | 1011 px |
+| **Height** | 53.98 mm | 2.125 in | 638 px |
+| **Corner Radius** | 3.18 mm | 0.125 in | 38 px |
+| **Aspect Ratio** | 1.586 : 1 | 1.586 : 1 | 1.586 : 1 |
 
 ---
 
-## Privacy and Compliance Note
-All documents in this directory use fictional names, sample numbers (`XXXX XXXX 4829`, `ABCPS1234F`), and synthetic silhouettes. No actual Personally Identifiable Information (PII) is included.
+## Official Indian ID Portals and Sheet Layouts
+
+| # | ID Card Name | Issuing Authority | Official Portal Link | Document Layout |
+|---|---|---|---|---|
+| 1 | **Aadhaar Card** | UIDAI | [myaadhaar.uidai.gov.in](https://myaadhaar.uidai.gov.in) | e-Aadhaar A4 PDF Sheet (Bottom 1/3 section contains Front + Back) |
+| 2 | **APAAR ID** | Ministry of Education | [apaar.education.gov.in](https://apaar.education.gov.in) | DigiLocker academic registry sheet |
+| 3 | **ABC Card** | UGC / MoE | [abc.gov.in](https://abc.gov.in) | Academic Bank of Credits certificate |
+| 4 | **Ayushman Card** | NHA (MoHFW) | [beneficiary.nha.gov.in](https://beneficiary.nha.gov.in) | PM-JAY Golden Card sheet |
+| 5 | **Driving Licence** | MoRTH | [parivahan.gov.in](https://parivahan.gov.in) | Sarathi Form 7 DL document |
+| 6 | **e-Shram Card** | Ministry of Labour | [eshram.gov.in](https://eshram.gov.in) | UAN registration A4 sheet |
+| 7 | **Family ID** | State Governments | [meraparivar.haryana.gov.in](https://meraparivar.haryana.gov.in) | PPP / Family ID certificate |
+| 8 | **Farmer ID** | Ministry of Agriculture | [agristack.gov.in](https://agristack.gov.in) | AgriStack / PM-Kisan Digital ID |
+| 9 | **Health ID (ABHA)** | NHA / ABDM | [abha.abdm.gov.in](https://abha.abdm.gov.in) | ABDM digital health account sheet |
+| 10 | **Ration Card** | Dept of Food & Public Distribution | [nfsa.gov.in](https://nfsa.gov.in) | NFSA ePDS ration card sheet |
+| 11 | **PAN Card** | Income Tax Dept | [eportal.incometax.gov.in](https://eportal.incometax.gov.in) | e-PAN A4 slip (Bottom portion) |
+| 12 | **Voter ID (e-EPIC)**| Election Commission of India | [voters.eci.gov.in](https://voters.eci.gov.in) | 1-2 page e-EPIC PDF sheet |
+
+---
+
+## Zero Telemetry and Security Notice
+
+All card processing, cropping, decryption, image filtering, and PDF generation are performed strictly on the client side inside the user's web browser. No identity documents or biometric data are transmitted across any network.
