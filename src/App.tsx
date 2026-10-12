@@ -45,7 +45,7 @@ export function App() {
   const [isSavingBack, setIsSavingBack] = useState<boolean>(false);
 
   const [hasBackSide, setHasBackSide] = useState<boolean>(true);
-  const [lockRatio, setLockRatio] = useState<boolean>(true);
+  const [lockRatio, setLockRatio] = useState<boolean>(false);
   const [filters, setFilters] = useState<FilterSettings>(DEFAULT_FILTERS);
   const [selectedFormat, setSelectedFormat] = useState<PrintLayoutFormat>('lamination_pouch');
 
@@ -223,22 +223,71 @@ export function App() {
   // Real-Time Crop Box Actions (only updates coordinates in state, 0ms latency)
   const handleSelectFront = () => {
     if (!activeFile) return;
-    const box: CropBox = {
-      ...selectedPreset.defaultFrontBox,
-      pageNumber: activePageNum,
-      fileId: activeFile.id,
-    };
-    setFrontBox(box);
+    if (backBox) {
+      // If back box already exists, adopt its exact size and proportion!
+      const width = backBox.width;
+      const height = backBox.height;
+      let x = backBox.x >= width + 2 ? backBox.x - width - 2 : Math.max(0, backBox.x - 5);
+      if (x < 0) x = 5;
+      const y = backBox.y;
+      setFrontBox({
+        x,
+        y,
+        width,
+        height,
+        pageNumber: activePageNum,
+        fileId: activeFile.id,
+      });
+    } else {
+      const box: CropBox = {
+        ...selectedPreset.defaultFrontBox,
+        pageNumber: activePageNum,
+        fileId: activeFile.id,
+      };
+      setFrontBox(box);
+    }
   };
 
   const handleSelectBack = () => {
     if (!activeFile) return;
-    const box: CropBox = {
-      ...selectedPreset.defaultBackBox,
-      pageNumber: activePageNum,
-      fileId: activeFile.id,
-    };
-    setBackBox(box);
+    if (frontBox) {
+      // If front box already exists, adopt its exact size and proportion!
+      const width = frontBox.width;
+      const height = frontBox.height;
+      let x = frontBox.x + width + width + 2 <= 100 
+        ? frontBox.x + width + 2 
+        : Math.min(100 - width, frontBox.x + 5);
+      const y = frontBox.y;
+      setBackBox({
+        x,
+        y,
+        width,
+        height,
+        pageNumber: activePageNum,
+        fileId: activeFile.id,
+      });
+    } else {
+      const box: CropBox = {
+        ...selectedPreset.defaultBackBox,
+        pageNumber: activePageNum,
+        fileId: activeFile.id,
+      };
+      setBackBox(box);
+    }
+  };
+
+  const handleCropBoxResize = (
+    target: 'front' | 'back',
+    newBox: CropBox,
+    oppositeBox: CropBox | null
+  ) => {
+    if (target === 'front') {
+      setFrontBox(newBox);
+      if (oppositeBox) setBackBox(oppositeBox);
+    } else {
+      setBackBox(newBox);
+      if (oppositeBox) setFrontBox(oppositeBox);
+    }
   };
 
   const handleFrontBoxChange = (newBox: CropBox) => {
@@ -328,33 +377,64 @@ export function App() {
     return { finalFrontCanvas, finalBackCanvas };
   };
 
-  // Export PDF with Location Picker Prompt
-  const handleExportPdf = async () => {
-    try {
-      setIsGeneratingPdf(true);
-      const { finalFrontCanvas, finalBackCanvas } = await ensureFreshCropsAsync();
-
-      if (!finalFrontCanvas) {
-        alert('Please select at least a Front crop box before exporting.');
-        return;
+  // Active shared card proportion (derived from whichever box was defined/adjusted)
+  const currentCardRatio = (() => {
+    if (frontBox && activeFile) {
+      const page = activeFile.pages.find((p) => p.pageNumber === frontBox.pageNumber) || activeFile.pages[0];
+      if (page && frontBox.height > 0) {
+        return (frontBox.width * page.width) / (frontBox.height * page.height);
       }
+    }
+    if (backBox && activeFile) {
+      const page = activeFile.pages.find((p) => p.pageNumber === backBox.pageNumber) || activeFile.pages[0];
+      if (page && backBox.height > 0) {
+        return (backBox.width * page.width) / (backBox.height * page.height);
+      }
+    }
+    if (cachedFront?.canvas) {
+      return cachedFront.canvas.width / cachedFront.canvas.height;
+    }
+    if (cachedBack?.canvas) {
+      return cachedBack.canvas.width / cachedBack.canvas.height;
+    }
+    return selectedPreset.dimensions.widthMm / selectedPreset.dimensions.heightMm;
+  })();
 
-      const cleanTitle = selectedPreset.shortName.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const defaultFilename = `${cleanTitle}_print_ready_${selectedFormat}.pdf`;
+  const effectiveCardDimensions = {
+    widthMm: selectedPreset.dimensions.widthMm,
+    heightMm: Number((selectedPreset.dimensions.widthMm / currentCardRatio).toFixed(2)),
+    cornerRadiusMm: selectedPreset.dimensions.cornerRadiusMm,
+  };
 
-      await promptAndSavePdf(
-        () =>
-          generatePrintPdf(
-            finalFrontCanvas!,
-            hasBackSide && finalBackCanvas ? finalBackCanvas : null,
-            selectedFormat,
-            selectedPreset.shortName,
-            selectedPreset.dimensions
-          ),
-        defaultFilename
-      );
+  // Export PDF with immediate system file picker prompt
+  const handleExportPdf = async () => {
+    if (!frontBox && !cachedFront) {
+      alert('Please select at least a Front crop box before exporting.');
+      return;
+    }
+
+    const cleanTitle = selectedPreset.shortName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const defaultFilename = `${cleanTitle}_print_ready_${selectedFormat}.pdf`;
+
+    try {
+      // Prompt system save file picker immediately while user gesture is active
+      await promptAndSavePdf(async () => {
+        setIsGeneratingPdf(true);
+        const { finalFrontCanvas, finalBackCanvas } = await ensureFreshCropsAsync();
+        if (!finalFrontCanvas) {
+          throw new Error('Front crop canvas is missing. Please select a Front crop box.');
+        }
+
+        return generatePrintPdf(
+          finalFrontCanvas,
+          hasBackSide && finalBackCanvas ? finalBackCanvas : null,
+          selectedFormat,
+          selectedPreset.shortName,
+          effectiveCardDimensions
+        );
+      }, defaultFilename);
     } catch (err) {
-      console.error('Failed to generate PDF:', err);
+      console.error('Failed to generate or save PDF:', err);
       alert('PDF generation error: ' + (err as Error).message);
     } finally {
       setIsGeneratingPdf(false);
@@ -373,7 +453,7 @@ export function App() {
         hasBackSide && finalBackCanvas ? finalBackCanvas : null,
         selectedFormat,
         selectedPreset.shortName,
-        selectedPreset.dimensions
+        effectiveCardDimensions
       );
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
@@ -540,6 +620,7 @@ export function App() {
                   frontBox={frontBox}
                   backBox={backBox}
                   hasBackSide={hasBackSide}
+                  onCropBoxResize={handleCropBoxResize}
                   onFrontBoxChange={handleFrontBoxChange}
                   onBackBoxChange={handleBackBoxChange}
                   onSelectFront={handleSelectFront}
@@ -565,6 +646,7 @@ export function App() {
                   onDownloadPng={handleDownloadPng}
                   isSavingFront={isSavingFront}
                   isSavingBack={isSavingBack}
+                  cardAspectRatio={currentCardRatio}
                 />
               </div>
             </>

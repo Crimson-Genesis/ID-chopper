@@ -14,6 +14,7 @@ interface SideBySideCropPreviewProps {
   onDownloadPng: (target: 'front' | 'back') => void;
   isSavingFront: boolean;
   isSavingBack: boolean;
+  cardAspectRatio?: number;
 }
 
 interface PreviewCardProps {
@@ -27,6 +28,7 @@ interface PreviewCardProps {
   selectedPreset: CardPreset;
   onDownload: () => void;
   isSaving: boolean;
+  cardAspectRatio?: number;
 }
 
 const PreviewCard: React.FC<PreviewCardProps> = ({
@@ -40,6 +42,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({
   selectedPreset,
   onDownload,
   isSaving,
+  cardAspectRatio,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -85,7 +88,13 @@ const PreviewCard: React.FC<PreviewCardProps> = ({
     }`,
   };
 
-  const presetRatio = `${selectedPreset.dimensions.widthMm} / ${selectedPreset.dimensions.heightMm}`;
+  const effectiveRatio = cardAspectRatio 
+    ? cardAspectRatio 
+    : isLive && sourcePage && activeBox
+    ? (activeBox.width * sourcePage.width) / Math.max(1, activeBox.height * sourcePage.height)
+    : cachedCrop?.canvas
+    ? cachedCrop.canvas.width / cachedCrop.canvas.height
+    : selectedPreset.dimensions.widthMm / selectedPreset.dimensions.heightMm;
 
   return (
     <div className="p-3.5 rounded-xl bg-black border border-zinc-800/80 flex flex-col items-center space-y-3">
@@ -125,7 +134,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({
 
       {/* Card Aspect Container */}
       <div 
-        style={{ aspectRatio: presetRatio }}
+        style={{ aspectRatio: `${effectiveRatio}` }}
         className="relative w-full rounded-xl overflow-hidden shadow-xl border border-zinc-700 bg-zinc-950 flex items-center justify-center p-1"
       >
         {isLive ? (
@@ -202,7 +211,12 @@ export const SideBySideCropPreview: React.FC<SideBySideCropPreviewProps> = ({
   onDownloadPng,
   isSavingFront,
   isSavingBack,
+  cardAspectRatio,
 }) => {
+  const dynamicHeightMm = cardAspectRatio
+    ? (selectedPreset.dimensions.widthMm / cardAspectRatio).toFixed(1)
+    : selectedPreset.dimensions.heightMm;
+
   return (
     <div className="rounded-2xl bg-zinc-900/90 border border-zinc-800 p-4 space-y-3">
       <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
@@ -214,7 +228,7 @@ export const SideBySideCropPreview: React.FC<SideBySideCropPreviewProps> = ({
         </div>
         <div className="flex items-center space-x-2 text-[11px] text-zinc-400 font-mono">
           <Sparkles className="w-3 h-3 text-white" />
-          <span>{selectedPreset.dimensions.widthMm} x {selectedPreset.dimensions.heightMm} mm</span>
+          <span>{selectedPreset.dimensions.widthMm} x {dynamicHeightMm} mm</span>
         </div>
       </div>
 
@@ -231,6 +245,7 @@ export const SideBySideCropPreview: React.FC<SideBySideCropPreviewProps> = ({
           selectedPreset={selectedPreset}
           onDownload={() => onDownloadPng('front')}
           isSaving={isSavingFront}
+          cardAspectRatio={cardAspectRatio}
         />
 
         {/* Back Card Preview */}
@@ -246,6 +261,7 @@ export const SideBySideCropPreview: React.FC<SideBySideCropPreviewProps> = ({
             selectedPreset={selectedPreset}
             onDownload={() => onDownloadPng('back')}
             isSaving={isSavingBack}
+            cardAspectRatio={cardAspectRatio}
           />
         ) : (
           <div className="p-3.5 rounded-xl bg-black/40 border border-dashed border-zinc-800 flex flex-col items-center justify-center text-center p-6 text-xs text-zinc-500 space-y-2">

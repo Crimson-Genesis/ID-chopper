@@ -430,7 +430,7 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
         </div>
       </div>
 
-      {/* 6. Export Action Buttons (Save PDF with location prompt) */}
+      {/* 6. Export Action Buttons */}
       <div className="space-y-2 pt-2 border-t border-zinc-800">
         <button
           onClick={onExportPdf}
@@ -442,7 +442,7 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
           ) : (
             <Download className="w-4 h-4 text-black" />
           )}
-          <span>Save PDF (Choose Location)</span>
+          <span>Save PDF</span>
         </button>
 
         <button

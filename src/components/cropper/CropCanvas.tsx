@@ -17,6 +17,11 @@ interface CropCanvasProps {
   frontBox: CropBox | null;
   backBox: CropBox | null;
   hasBackSide: boolean;
+  onCropBoxResize?: (
+    target: 'front' | 'back',
+    newBox: CropBox,
+    oppositeBox: CropBox | null
+  ) => void;
   onFrontBoxChange: (box: CropBox) => void;
   onBackBoxChange: (box: CropBox) => void;
   onSelectFront: () => void;
@@ -36,6 +41,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   frontBox,
   backBox,
   hasBackSide,
+  onCropBoxResize,
   onFrontBoxChange,
   onBackBoxChange,
   onSelectFront,
@@ -56,6 +62,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     startX: number;
     startY: number;
     origBox: CropBox;
+    origOppositeBox: CropBox | null;
   } | null>(null);
 
   const isFrontOnCurrentPage = 
@@ -128,6 +135,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     e.preventDefault();
 
     const box = target === 'front' ? frontBox : backBox;
+    const oppositeBox = target === 'front' ? backBox : frontBox;
     if (!box) return;
 
     setDragState({
@@ -136,6 +144,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       startX: e.clientX,
       startY: e.clientY,
       origBox: { ...box },
+      origOppositeBox: oppositeBox ? { ...oppositeBox } : null,
     });
   };
 
@@ -147,70 +156,150 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       const dx = ((e.clientX - dragState.startX) / rect.width) * 100;
       const dy = ((e.clientY - dragState.startY) / rect.height) * 100;
 
-      const { target, handle, origBox } = dragState;
-      let newBox = { ...origBox };
+      const { target, handle, origBox, origOppositeBox } = dragState;
+      const minSize = 3; // minimum 3% width and height
 
-      const activeRatio = selectedPreset.dimensions.widthMm / selectedPreset.dimensions.heightMm;
-      const containerRatio = rect.width / rect.height;
-      const targetPercentRatio = activeRatio / containerRatio;
+      const origLeft = origBox.x;
+      const origTop = origBox.y;
+      const origRight = origBox.x + origBox.width;
+      const origBottom = origBox.y + origBox.height;
+
+      let newBox: CropBox = { ...origBox };
+      let newOppositeBox: CropBox | null = null;
 
       if (handle === 'move') {
-        newBox.x = Math.max(0, Math.min(100 - newBox.width, origBox.x + dx));
-        newBox.y = Math.max(0, Math.min(100 - newBox.height, origBox.y + dy));
-      } else if (handle) {
-        let newW = origBox.width;
-        let newH = origBox.height;
-        let newX = origBox.x;
-        let newY = origBox.y;
-
-        if (handle.includes('e')) {
-          newW = Math.max(5, origBox.width + dx);
-          if (lockRatio) {
-            newH = newW / targetPercentRatio;
-          }
-        }
-        if (handle.includes('w')) {
-          const maxLeft = origBox.x + origBox.width - 5;
-          newX = Math.min(maxLeft, Math.max(0, origBox.x + dx));
-          newW = origBox.width - (newX - origBox.x);
-          if (lockRatio) {
-            newH = newW / targetPercentRatio;
-          }
-        }
-        if (handle.includes('s')) {
-          newH = Math.max(5, origBox.height + dy);
-          if (lockRatio) {
-            newW = newH * targetPercentRatio;
-          }
-        }
-        if (handle.includes('n')) {
-          const maxTop = origBox.y + origBox.height - 5;
-          newY = Math.min(maxTop, Math.max(0, origBox.y + dy));
-          newH = origBox.height - (newY - origBox.y);
-          if (lockRatio) {
-            newW = newH * targetPercentRatio;
-          }
-        }
-
-        // Clamping inside [0, 100]
-        if (newX + newW > 100) newW = 100 - newX;
-        if (newY + newH > 100) newH = 100 - newY;
-        if (newX < 0) { newX = 0; }
-        if (newY < 0) { newY = 0; }
-
+        const newX = Math.max(0, Math.min(100 - origBox.width, origLeft + dx));
+        const newY = Math.max(0, Math.min(100 - origBox.height, origTop + dy));
         newBox = {
           ...origBox,
           x: newX,
           y: newY,
-          width: newW,
-          height: newH,
         };
+      } else if (handle) {
+        if (!lockRatio) {
+          // Freeform Resizing: Direct 1:1 exact pointer tracking for all 8 handles
+          let newLeft = origLeft;
+          let newTop = origTop;
+          let newRight = origRight;
+          let newBottom = origBottom;
+
+          if (handle.includes('e')) {
+            newRight = Math.max(origLeft + minSize, Math.min(100, origRight + dx));
+          }
+          if (handle.includes('w')) {
+            newLeft = Math.max(0, Math.min(origRight - minSize, origLeft + dx));
+          }
+          if (handle.includes('s')) {
+            newBottom = Math.max(origTop + minSize, Math.min(100, origBottom + dy));
+          }
+          if (handle.includes('n')) {
+            newTop = Math.max(0, Math.min(origBottom - minSize, origTop + dy));
+          }
+
+          newBox = {
+            ...origBox,
+            x: newLeft,
+            y: newTop,
+            width: newRight - newLeft,
+            height: newBottom - newTop,
+          };
+        } else {
+          // Ratio Locked Resizing
+          const targetRatio = origBox.width / origBox.height;
+
+          if (handle === 'e') {
+            const newW = Math.max(minSize, Math.min(100 - origLeft, origBox.width + dx));
+            let newH = newW / targetRatio;
+            if (origTop + newH > 100) {
+              newH = 100 - origTop;
+            }
+            newBox = { ...origBox, x: origLeft, y: origTop, width: newH * targetRatio, height: newH };
+          } else if (handle === 'w') {
+            const newW = Math.max(minSize, Math.min(origRight, origBox.width - dx));
+            let newH = newW / targetRatio;
+            if (origTop + newH > 100) {
+              newH = 100 - origTop;
+            }
+            newBox = { ...origBox, x: origRight - newH * targetRatio, y: origTop, width: newH * targetRatio, height: newH };
+          } else if (handle === 's') {
+            const newH = Math.max(minSize, Math.min(100 - origTop, origBox.height + dy));
+            let newW = newH * targetRatio;
+            if (origLeft + newW > 100) {
+              newW = 100 - origLeft;
+            }
+            newBox = { ...origBox, x: origLeft, y: origTop, width: newW, height: newW / targetRatio };
+          } else if (handle === 'n') {
+            const newH = Math.max(minSize, Math.min(origBottom, origBox.height - dy));
+            let newW = newH * targetRatio;
+            if (origLeft + newW > 100) {
+              newW = 100 - origLeft;
+            }
+            newBox = { ...origBox, x: origLeft, y: origBottom - newW / targetRatio, width: newW, height: newW / targetRatio };
+          } else if (handle === 'se') {
+            const diagDelta = (dx + dy * targetRatio) / 2;
+            let newW = Math.max(minSize, Math.min(100 - origLeft, origBox.width + diagDelta));
+            let newH = newW / targetRatio;
+            if (origTop + newH > 100) {
+              newH = 100 - origTop;
+              newW = newH * targetRatio;
+            }
+            newBox = { ...origBox, x: origLeft, y: origTop, width: newW, height: newH };
+          } else if (handle === 'sw') {
+            const diagDelta = (-dx + dy * targetRatio) / 2;
+            let newW = Math.max(minSize, Math.min(origRight, origBox.width + diagDelta));
+            let newH = newW / targetRatio;
+            if (origTop + newH > 100) {
+              newH = 100 - origTop;
+              newW = newH * targetRatio;
+            }
+            newBox = { ...origBox, x: origRight - newW, y: origTop, width: newW, height: newH };
+          } else if (handle === 'ne') {
+            const diagDelta = (dx - dy * targetRatio) / 2;
+            let newW = Math.max(minSize, Math.min(100 - origLeft, origBox.width + diagDelta));
+            let newH = newW / targetRatio;
+            if (origBottom - newH < 0) {
+              newH = origBottom;
+              newW = newH * targetRatio;
+            }
+            newBox = { ...origBox, x: origLeft, y: origBottom - newH, width: newW, height: newH };
+          } else if (handle === 'nw') {
+            const diagDelta = (-dx - dy * targetRatio) / 2;
+            let newW = Math.max(minSize, Math.min(origRight, origBox.width + diagDelta));
+            let newH = newW / targetRatio;
+            if (origBottom - newH < 0) {
+              newH = origBottom;
+              newW = newH * targetRatio;
+            }
+            newBox = { ...origBox, x: origRight - newW, y: origBottom - newH, width: newW, height: newH };
+          }
+        }
+
+        // Shared Proportion Sync: The opposite box adopts the exact size and proportion!
+        if (origOppositeBox) {
+          const newOppW = newBox.width;
+          const newOppH = newBox.height;
+          const newOppX = Math.max(0, Math.min(100 - newOppW, origOppositeBox.x));
+          const newOppY = Math.max(0, Math.min(100 - newOppH, origOppositeBox.y));
+          newOppositeBox = {
+            ...origOppositeBox,
+            x: newOppX,
+            y: newOppY,
+            width: newOppW,
+            height: newOppH,
+          };
+        }
       }
 
-      if (target === 'front') {
-        onFrontBoxChange(newBox);
+      if (onCropBoxResize) {
+        onCropBoxResize(target, newBox, newOppositeBox);
       } else {
-        onBackBoxChange(newBox);
+        if (target === 'front') {
+          onFrontBoxChange(newBox);
+          if (newOppositeBox) onBackBoxChange(newOppositeBox);
+        } else {
+          onBackBoxChange(newBox);
+          if (newOppositeBox) onFrontBoxChange(newOppositeBox);
+        }
       }
     };
 
@@ -226,7 +315,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [dragState, lockRatio, selectedPreset, onFrontBoxChange, onBackBoxChange]);
+  }, [dragState, lockRatio, onCropBoxResize, onFrontBoxChange, onBackBoxChange]);
 
   const renderCropBoxOverlay = (
     box: CropBox,
@@ -265,9 +354,15 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
         </div>
 
         {/* Dimension indicator on bottom */}
-        <div className="absolute -bottom-6 right-0 px-1.5 py-0.5 rounded bg-black text-white text-[10px] font-mono border border-zinc-700">
-          {selectedPreset.dimensions.widthMm} x {selectedPreset.dimensions.heightMm} mm
-        </div>
+        {(() => {
+          const cropRatio = (box.width * activePage.width) / Math.max(1, box.height * activePage.height);
+          const currentHeightMm = (selectedPreset.dimensions.widthMm / cropRatio).toFixed(1);
+          return (
+            <div className="absolute -bottom-6 right-0 px-1.5 py-0.5 rounded bg-black text-white text-[10px] font-mono border border-zinc-700 select-none pointer-events-none whitespace-nowrap">
+              {selectedPreset.dimensions.widthMm} x {currentHeightMm} mm
+            </div>
+          );
+        })()}
 
         {/* 8 Resize Handles in crisp monochrome */}
         {(['nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'] as HandleType[]).map((handle) => {
@@ -312,7 +407,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           return (
             <div
               key={handle}
-              className={`absolute w-3.5 h-3.5 rounded-full border border-black bg-white ${posClass} ${cursorClass} shadow-md z-20 hover:scale-125 transition-transform`}
+              className={`absolute w-3.5 h-3.5 rounded-full border border-black bg-white ${posClass} ${cursorClass} shadow-md z-20 hover:scale-125 transition-transform touch-none`}
               onPointerDown={(e) => handlePointerDown(e, target, handle)}
             />
           );
