@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CARD_PRESETS } from '../constants/cardPresets';
-import { X, ExternalLink, ShieldCheck, Search, BookOpen } from 'lucide-react';
+import { X, ExternalLink, Search, BookOpen } from 'lucide-react';
 
 interface InfoModalProps {
   isOpen: boolean;
@@ -100,19 +100,6 @@ export const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose }) => {
                 </div>
               </div>
             ))}
-          </div>
-
-          {/* Privacy Note */}
-          <div className="rounded-2xl bg-zinc-900 border border-zinc-800 p-4 flex items-start space-x-3 text-xs text-zinc-300">
-            <ShieldCheck className="w-5 h-5 shrink-0 text-white mt-0.5" />
-            <div>
-              <p className="font-semibold text-white">
-                Privacy Guaranteed
-              </p>
-              <p className="text-[11px] text-zinc-400 mt-0.5">
-                All document processing, rendering, crop box extraction, and PDF generation execute locally in your web browser. No Aadhaar, PAN, voter details, or images are ever transmitted to any external server.
-              </p>
-            </div>
           </div>
         </div>
       </div>

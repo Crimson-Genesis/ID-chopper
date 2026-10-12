@@ -3,8 +3,7 @@ import {
   AppFile, 
   CardPreset, 
   FilterSettings, 
-  PrintLayoutFormat, 
-  CachedCropItem 
+  PrintLayoutFormat 
 } from '../types/card';
 import { CARD_PRESETS, CUSTOM_CARD_PRESET } from '../constants/cardPresets';
 import { 
@@ -44,8 +43,10 @@ interface SidebarControlsProps {
   onExportPdf: () => void;
   onBrowserPrint: () => void;
   isGeneratingPdf: boolean;
-  frontCrop: CachedCropItem | null;
-  backCrop: CachedCropItem | null;
+  frontCropFileId?: string;
+  backCropFileId?: string;
+  hasFrontCrop: boolean;
+  hasBackCrop: boolean;
 }
 
 const PRINT_FORMATS: { id: PrintLayoutFormat; title: string; desc: string }[] = [
@@ -76,8 +77,10 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   onExportPdf,
   onBrowserPrint,
   isGeneratingPdf,
-  frontCrop,
-  backCrop,
+  frontCropFileId,
+  backCropFileId,
+  hasFrontCrop,
+  hasBackCrop,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -88,7 +91,7 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
     }
   };
 
-  const hasCrops = frontCrop !== null || backCrop !== null;
+  const hasCrops = hasFrontCrop || (hasBackSide && hasBackCrop);
 
   return (
     <aside className="w-full md:w-80 lg:w-96 bg-black border-b md:border-b-0 md:border-r border-zinc-800 p-4 space-y-5 overflow-y-auto max-h-none md:max-h-[calc(100vh-4rem)] flex-shrink-0 font-sans">
@@ -137,13 +140,13 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
           )}
         </div>
 
-        {/* Loaded Files List */}
+        {/* Loaded Files List (Half-page height) */}
         {files.length > 0 && (
-          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+          <div className="space-y-1.5 max-h-[48vh] min-h-[220px] overflow-y-auto pr-1.5 rounded-xl border border-zinc-800/60 bg-zinc-950/40 p-2">
             {files.map((file) => {
               const isActive = file.id === activeFileId;
-              const hasFront = frontCrop?.fileId === file.id;
-              const hasBack = backCrop?.fileId === file.id;
+              const hasFront = frontCropFileId === file.id;
+              const hasBack = backCropFileId === file.id;
 
               return (
                 <div

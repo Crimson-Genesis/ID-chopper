@@ -44,7 +44,7 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
               Password-Protected PDF
             </h3>
             <p className="text-xs text-zinc-400">
-              Enter password to decrypt document client-side
+              Enter password to unlock document
             </p>
           </div>
         </div>

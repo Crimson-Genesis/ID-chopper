@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Header } from './components/Header';
 import { SidebarControls } from './components/SidebarControls';
 import { CropCanvas } from './components/cropper/CropCanvas';
@@ -47,9 +47,13 @@ export function App() {
   const [activePageNum, setActivePageNum] = useState<number>(1);
   const [selectedPreset, setSelectedPreset] = useState<CardPreset>(CARD_PRESETS[1]); // Aadhaar default
 
-  // Cached Crop Items (preserved across file switching)
-  const [frontCrop, setFrontCrop] = useState<CachedCropItem | null>(null);
-  const [backCrop, setBackCrop] = useState<CachedCropItem | null>(null);
+  // Active Crop Box coordinates for currently loaded document (real-time movement, 60 FPS, no lag)
+  const [frontBox, setFrontBox] = useState<CropBox | null>(null);
+  const [backBox, setBackBox] = useState<CropBox | null>(null);
+
+  // Cached Crop Items (preserved across file switching, extracted only on file switch or print/export)
+  const [cachedFront, setCachedFront] = useState<CachedCropItem | null>(null);
+  const [cachedBack, setCachedBack] = useState<CachedCropItem | null>(null);
 
   const [hasBackSide, setHasBackSide] = useState<boolean>(true);
   const [lockRatio, setLockRatio] = useState<boolean>(true);
@@ -65,26 +69,6 @@ export function App() {
   const [isInfoOpen, setIsInfoOpen] = useState<boolean>(false);
 
   const activeFile = files.find((f) => f.id === activeFileId) || null;
-
-  // Re-extract cached crops when filter settings change
-  useEffect(() => {
-    if (frontCrop) {
-      const srcFile = files.find((f) => f.id === frontCrop.fileId);
-      if (srcFile) {
-        const page = srcFile.pages.find((p) => p.pageNumber === frontCrop.pageNumber) || srcFile.pages[0];
-        const canvas = extractCanvasCrop(page, frontCrop.box, filters);
-        setFrontCrop((prev) => prev ? { ...prev, canvas, dataUrl: canvas.toDataURL('image/png') } : null);
-      }
-    }
-    if (backCrop) {
-      const srcFile = files.find((f) => f.id === backCrop.fileId);
-      if (srcFile) {
-        const page = srcFile.pages.find((p) => p.pageNumber === backCrop.pageNumber) || srcFile.pages[0];
-        const canvas = extractCanvasCrop(page, backCrop.box, filters);
-        setBackCrop((prev) => prev ? { ...prev, canvas, dataUrl: canvas.toDataURL('image/png') } : null);
-      }
-    }
-  }, [filters]);
 
   // File Operations
   const handleAddFiles = async (newFiles: File[]) => {
@@ -112,27 +96,85 @@ export function App() {
     }
   };
 
-  const handleSelectFile = (fileId: string) => {
-    setActiveFileId(fileId);
+  // Switch File: Save outgoing file's active crop boxes to cache, then switch and restore incoming
+  const handleSelectFile = (newFileId: string) => {
+    if (newFileId === activeFileId) return;
+
+    // 1. Save outgoing active file's crops to cache
+    if (activeFile) {
+      if (frontBox && frontBox.fileId === activeFile.id) {
+        const page = activeFile.pages.find((p) => p.pageNumber === frontBox.pageNumber) || activeFile.pages[0];
+        const canvas = extractCanvasCrop(page, frontBox, filters);
+        setCachedFront({
+          fileId: activeFile.id,
+          fileName: activeFile.name,
+          pageNumber: frontBox.pageNumber,
+          box: frontBox,
+          canvas,
+          dataUrl: canvas.toDataURL('image/png'),
+        });
+      }
+
+      if (backBox && backBox.fileId === activeFile.id) {
+        const page = activeFile.pages.find((p) => p.pageNumber === backBox.pageNumber) || activeFile.pages[0];
+        const canvas = extractCanvasCrop(page, backBox, filters);
+        setCachedBack({
+          fileId: activeFile.id,
+          fileName: activeFile.name,
+          pageNumber: backBox.pageNumber,
+          box: backBox,
+          canvas,
+          dataUrl: canvas.toDataURL('image/png'),
+        });
+      }
+    }
+
+    // 2. Switch to new active file
+    setActiveFileId(newFileId);
     setActivePageNum(1);
+
+    // 3. Restore crop boxes for incoming file if it previously had crops
+    if (cachedFront && cachedFront.fileId === newFileId) {
+      setFrontBox(cachedFront.box);
+      setActivePageNum(cachedFront.pageNumber);
+    } else {
+      setFrontBox(null);
+    }
+
+    if (cachedBack && cachedBack.fileId === newFileId) {
+      setBackBox(cachedBack.box);
+    } else {
+      setBackBox(null);
+    }
   };
 
   const handleRemoveFile = (fileId: string) => {
     setFiles((prev) => {
       const filtered = prev.filter((f) => f.id !== fileId);
       if (activeFileId === fileId) {
-        setActiveFileId(filtered.length > 0 ? filtered[0].id : null);
+        const nextId = filtered.length > 0 ? filtered[0].id : null;
+        setActiveFileId(nextId);
         setActivePageNum(1);
+
+        if (cachedFront && cachedFront.fileId === nextId) {
+          setFrontBox(cachedFront.box);
+        } else {
+          setFrontBox(null);
+        }
+
+        if (cachedBack && cachedBack.fileId === nextId) {
+          setBackBox(cachedBack.box);
+        } else {
+          setBackBox(null);
+        }
       }
       return filtered;
     });
 
-    if (frontCrop?.fileId === fileId) {
-      setFrontCrop(null);
-    }
-    if (backCrop?.fileId === fileId) {
-      setBackCrop(null);
-    }
+    if (frontBox?.fileId === fileId) setFrontBox(null);
+    if (cachedFront?.fileId === fileId) setCachedFront(null);
+    if (backBox?.fileId === fileId) setBackBox(null);
+    if (cachedBack?.fileId === fileId) setCachedBack(null);
   };
 
   const handlePasswordSubmit = async (password: string) => {
@@ -156,79 +198,113 @@ export function App() {
     }
   };
 
-  // Crop Box Actions
+  // Real-Time Crop Box Actions (only updates coordinates in state, 0ms latency)
   const handleSelectFront = () => {
     if (!activeFile) return;
-    const page = activeFile.pages.find((p) => p.pageNumber === activePageNum) || activeFile.pages[0];
     const box: CropBox = {
       ...selectedPreset.defaultFrontBox,
       pageNumber: activePageNum,
-    };
-    const canvas = extractCanvasCrop(page, box, filters);
-    setFrontCrop({
       fileId: activeFile.id,
-      fileName: activeFile.name,
-      pageNumber: activePageNum,
-      box,
-      canvas,
-      dataUrl: canvas.toDataURL('image/png'),
-    });
+    };
+    setFrontBox(box);
   };
 
   const handleSelectBack = () => {
     if (!activeFile) return;
-    const page = activeFile.pages.find((p) => p.pageNumber === activePageNum) || activeFile.pages[0];
     const box: CropBox = {
       ...selectedPreset.defaultBackBox,
       pageNumber: activePageNum,
-    };
-    const canvas = extractCanvasCrop(page, box, filters);
-    setBackCrop({
       fileId: activeFile.id,
-      fileName: activeFile.name,
-      pageNumber: activePageNum,
-      box,
-      canvas,
-      dataUrl: canvas.toDataURL('image/png'),
-    });
+    };
+    setBackBox(box);
   };
 
   const handleFrontBoxChange = (newBox: CropBox) => {
-    if (!activeFile) return;
-    const page = activeFile.pages.find((p) => p.pageNumber === activePageNum) || activeFile.pages[0];
-    const canvas = extractCanvasCrop(page, newBox, filters);
-    setFrontCrop({
-      fileId: activeFile.id,
-      fileName: activeFile.name,
-      pageNumber: activePageNum,
-      box: newBox,
-      canvas,
-      dataUrl: canvas.toDataURL('image/png'),
-    });
+    setFrontBox(newBox);
   };
 
   const handleBackBoxChange = (newBox: CropBox) => {
-    if (!activeFile) return;
-    const page = activeFile.pages.find((p) => p.pageNumber === activePageNum) || activeFile.pages[0];
-    const canvas = extractCanvasCrop(page, newBox, filters);
-    setBackCrop({
-      fileId: activeFile.id,
-      fileName: activeFile.name,
-      pageNumber: activePageNum,
-      box: newBox,
-      canvas,
-      dataUrl: canvas.toDataURL('image/png'),
-    });
+    setBackBox(newBox);
   };
 
   const handleClearCrops = () => {
-    setFrontCrop(null);
-    setBackCrop(null);
+    setFrontBox(null);
+    setBackBox(null);
+    setCachedFront(null);
+    setCachedBack(null);
+  };
+
+  // On-demand extraction helpers (called ONLY when printing or downloading)
+  const getOrCreateFrontCrop = (): CachedCropItem | null => {
+    if (frontBox && activeFile && frontBox.fileId === activeFile.id) {
+      const page = activeFile.pages.find((p) => p.pageNumber === frontBox.pageNumber) || activeFile.pages[0];
+      const canvas = extractCanvasCrop(page, frontBox, filters);
+      const item: CachedCropItem = {
+        fileId: activeFile.id,
+        fileName: activeFile.name,
+        pageNumber: frontBox.pageNumber,
+        box: frontBox,
+        canvas,
+        dataUrl: canvas.toDataURL('image/png'),
+      };
+      setCachedFront(item);
+      return item;
+    }
+    if (cachedFront) {
+      const srcFile = files.find((f) => f.id === cachedFront.fileId);
+      if (srcFile) {
+        const page = srcFile.pages.find((p) => p.pageNumber === cachedFront.pageNumber) || srcFile.pages[0];
+        const canvas = extractCanvasCrop(page, cachedFront.box, filters);
+        const item: CachedCropItem = {
+          ...cachedFront,
+          canvas,
+          dataUrl: canvas.toDataURL('image/png'),
+        };
+        setCachedFront(item);
+        return item;
+      }
+    }
+    return cachedFront;
+  };
+
+  const getOrCreateBackCrop = (): CachedCropItem | null => {
+    if (backBox && activeFile && backBox.fileId === activeFile.id) {
+      const page = activeFile.pages.find((p) => p.pageNumber === backBox.pageNumber) || activeFile.pages[0];
+      const canvas = extractCanvasCrop(page, backBox, filters);
+      const item: CachedCropItem = {
+        fileId: activeFile.id,
+        fileName: activeFile.name,
+        pageNumber: backBox.pageNumber,
+        box: backBox,
+        canvas,
+        dataUrl: canvas.toDataURL('image/png'),
+      };
+      setCachedBack(item);
+      return item;
+    }
+    if (cachedBack) {
+      const srcFile = files.find((f) => f.id === cachedBack.fileId);
+      if (srcFile) {
+        const page = srcFile.pages.find((p) => p.pageNumber === cachedBack.pageNumber) || srcFile.pages[0];
+        const canvas = extractCanvasCrop(page, cachedBack.box, filters);
+        const item: CachedCropItem = {
+          ...cachedBack,
+          canvas,
+          dataUrl: canvas.toDataURL('image/png'),
+        };
+        setCachedBack(item);
+        return item;
+      }
+    }
+    return cachedBack;
   };
 
   // Export PDF with Location Picker Prompt
   const handleExportPdf = async () => {
-    if (!frontCrop) {
+    const finalFront = getOrCreateFrontCrop();
+    const finalBack = getOrCreateBackCrop();
+
+    if (!finalFront) {
       alert('Please select at least a Front crop box before exporting.');
       return;
     }
@@ -240,8 +316,8 @@ export function App() {
       await promptAndSavePdf(
         () =>
           generatePrintPdf(
-            frontCrop.canvas,
-            hasBackSide && backCrop ? backCrop.canvas : null,
+            finalFront.canvas,
+            hasBackSide && finalBack ? finalBack.canvas : null,
             selectedFormat,
             selectedPreset.shortName,
             selectedPreset.dimensions
@@ -258,12 +334,15 @@ export function App() {
 
   // Browser Print Directly
   const handleBrowserPrint = async () => {
-    if (!frontCrop) return;
+    const finalFront = getOrCreateFrontCrop();
+    const finalBack = getOrCreateBackCrop();
+    if (!finalFront) return;
+
     try {
       setIsGeneratingPdf(true);
       const doc = await generatePrintPdf(
-        frontCrop.canvas,
-        hasBackSide && backCrop ? backCrop.canvas : null,
+        finalFront.canvas,
+        hasBackSide && finalBack ? finalBack.canvas : null,
         selectedFormat,
         selectedPreset.shortName,
         selectedPreset.dimensions
@@ -289,17 +368,21 @@ export function App() {
 
   // Download Individual PNGs
   const handleDownloadPng = (target: 'front' | 'back') => {
-    if (target === 'front' && frontCrop) {
+    if (target === 'front') {
+      const finalFront = getOrCreateFrontCrop();
+      if (!finalFront) return;
       const link = document.createElement('a');
-      link.href = frontCrop.dataUrl;
+      link.href = finalFront.dataUrl;
       link.download = `${selectedPreset.shortName}_Front_Card_300DPI.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     }
-    if (target === 'back' && backCrop) {
+    if (target === 'back') {
+      const finalBack = getOrCreateBackCrop();
+      if (!finalBack) return;
       const link = document.createElement('a');
-      link.href = backCrop.dataUrl;
+      link.href = finalBack.dataUrl;
       link.download = `${selectedPreset.shortName}_Back_Card_300DPI.png`;
       document.body.appendChild(link);
       link.click();
@@ -335,8 +418,10 @@ export function App() {
           onExportPdf={handleExportPdf}
           onBrowserPrint={handleBrowserPrint}
           isGeneratingPdf={isGeneratingPdf}
-          frontCrop={frontCrop}
-          backCrop={backCrop}
+          frontCropFileId={frontBox?.fileId || cachedFront?.fileId}
+          backCropFileId={backBox?.fileId || cachedBack?.fileId}
+          hasFrontCrop={Boolean(frontBox || cachedFront)}
+          hasBackCrop={Boolean(backBox || cachedBack)}
         />
 
         {/* RIGHT MAIN WORKSPACE: Viewport with Gravity Single-Scroll + Live Side-by-Side Crop Previews */}
@@ -364,8 +449,8 @@ export function App() {
                   activeFile={activeFile}
                   activePageNum={activePageNum}
                   onSelectPage={setActivePageNum}
-                  frontCrop={frontCrop}
-                  backCrop={backCrop}
+                  frontBox={frontBox}
+                  backBox={backBox}
                   hasBackSide={hasBackSide}
                   onFrontBoxChange={handleFrontBoxChange}
                   onBackBoxChange={handleBackBoxChange}
@@ -374,14 +459,19 @@ export function App() {
                   onClearCrops={handleClearCrops}
                   selectedPreset={selectedPreset}
                   lockRatio={lockRatio}
+                  hasAnyCrops={Boolean(frontBox || backBox || cachedFront || cachedBack)}
                 />
               </div>
 
               {/* BOTTOM SECTION: Live Side-by-Side Front and Back Crop Preview */}
               <div className="pt-2">
                 <SideBySideCropPreview
-                  frontCrop={frontCrop}
-                  backCrop={backCrop}
+                  activeFile={activeFile}
+                  frontBox={frontBox}
+                  backBox={backBox}
+                  cachedFront={cachedFront}
+                  cachedBack={cachedBack}
+                  filters={filters}
                   hasBackSide={hasBackSide}
                   selectedPreset={selectedPreset}
                   onDownloadPng={handleDownloadPng}
@@ -411,7 +501,7 @@ export function App() {
 
       {/* Footer */}
       <footer className="border-t border-zinc-900 py-3 text-center text-[11px] text-zinc-600 bg-black">
-        CardPrint Studio - 100% Client-Side Indian Identity Document Cropper. Zero Server Uploads.
+        CardPrint Studio - Indian Identity Document Cropper & Print Sheet Studio.
       </footer>
     </div>
   );

@@ -4,6 +4,7 @@ export interface CropBox {
   width: number; // percentage 0 to 100
   height: number; // percentage 0 to 100
   pageNumber: number; // 1-indexed page
+  fileId?: string;
 }
 
 export type CardCategory = 

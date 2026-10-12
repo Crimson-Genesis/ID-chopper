@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { AppFile, CropBox, CardPreset, CachedCropItem } from '../../types/card';
+import { AppFile, CropBox, CardPreset } from '../../types/card';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -14,8 +14,8 @@ interface CropCanvasProps {
   activeFile: AppFile;
   activePageNum: number;
   onSelectPage: (pageNum: number) => void;
-  frontCrop: CachedCropItem | null;
-  backCrop: CachedCropItem | null;
+  frontBox: CropBox | null;
+  backBox: CropBox | null;
   hasBackSide: boolean;
   onFrontBoxChange: (box: CropBox) => void;
   onBackBoxChange: (box: CropBox) => void;
@@ -24,6 +24,7 @@ interface CropCanvasProps {
   onClearCrops: () => void;
   selectedPreset: CardPreset;
   lockRatio: boolean;
+  hasAnyCrops: boolean;
 }
 
 type HandleType = 'nw' | 'ne' | 'se' | 'sw' | 'n' | 's' | 'e' | 'w' | 'move' | null;
@@ -32,8 +33,8 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   activeFile,
   activePageNum,
   onSelectPage,
-  frontCrop,
-  backCrop,
+  frontBox,
+  backBox,
   hasBackSide,
   onFrontBoxChange,
   onBackBoxChange,
@@ -42,6 +43,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   onClearCrops,
   selectedPreset,
   lockRatio,
+  hasAnyCrops,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -57,15 +59,15 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
   } | null>(null);
 
   const isFrontOnCurrentPage = 
-    frontCrop !== null && 
-    frontCrop.fileId === activeFile.id && 
-    frontCrop.pageNumber === activePageNum;
+    frontBox !== null && 
+    frontBox.fileId === activeFile.id && 
+    frontBox.pageNumber === activePageNum;
 
   const isBackOnCurrentPage = 
-    backCrop !== null && 
+    backBox !== null && 
     hasBackSide &&
-    backCrop.fileId === activeFile.id && 
-    backCrop.pageNumber === activePageNum;
+    backBox.fileId === activeFile.id && 
+    backBox.pageNumber === activePageNum;
 
   const activePage = activeFile.pages.find((p) => p.pageNumber === activePageNum) || activeFile.pages[0];
 
@@ -125,15 +127,15 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
     e.stopPropagation();
     e.preventDefault();
 
-    const cropItem = target === 'front' ? frontCrop : backCrop;
-    if (!cropItem) return;
+    const box = target === 'front' ? frontBox : backBox;
+    if (!box) return;
 
     setDragState({
       target,
       handle,
       startX: e.clientX,
       startY: e.clientY,
-      origBox: { ...cropItem.box },
+      origBox: { ...box },
     });
   };
 
@@ -371,7 +373,7 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           {/* Clear Button */}
           <button
             onClick={onClearCrops}
-            disabled={!frontCrop && !backCrop}
+            disabled={!hasAnyCrops}
             className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 border border-zinc-800 text-xs font-medium transition-colors"
             title="Remove all crop boxes and clear cache"
           >
@@ -397,7 +399,6 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
             <span>{isFrontOnCurrentPage ? 'Front Selected' : 'Select Front'}</span>
           </button>
 
-          {/* Select Back Button */}
           {hasBackSide && (
             <button
               onClick={onSelectBack}
@@ -435,12 +436,12 @@ export const CropCanvas: React.FC<CropCanvasProps> = ({
           />
 
           {/* Overlays: Front & Back crop boxes */}
-          {isFrontOnCurrentPage && frontCrop && (
-            renderCropBoxOverlay(frontCrop.box, 'front', true)
+          {isFrontOnCurrentPage && frontBox && (
+            renderCropBoxOverlay(frontBox, 'front', true)
           )}
 
-          {isBackOnCurrentPage && backCrop && (
-            renderCropBoxOverlay(backCrop.box, 'back', false)
+          {isBackOnCurrentPage && backBox && (
+            renderCropBoxOverlay(backBox, 'back', false)
           )}
         </div>
       </div>

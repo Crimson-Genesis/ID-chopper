@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Cpu, FileText } from 'lucide-react';
+import { Cpu, FileText } from 'lucide-react';
 
 interface HeaderProps {
   onOpenInfo?: () => void;
@@ -19,9 +19,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenInfo }) => {
               <span className="font-bold text-base text-white tracking-tight">
                 CardPrint Studio
               </span>
-              <span className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
-                100% Client-Side
-              </span>
             </div>
             <p className="text-[11px] text-zinc-400">
               Indian ID Card Cropper and Print-Ready Generator
@@ -29,13 +26,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenInfo }) => {
           </div>
         </div>
 
-        {/* Security & Supported IDs Pill */}
+        {/* Supported IDs Pill */}
         <div className="flex items-center space-x-3">
-          <div className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs font-medium">
-            <ShieldCheck className="w-3.5 h-3.5 text-white" />
-            <span>100% Private (No Server Upload)</span>
-          </div>
-
           {onOpenInfo && (
             <button
               onClick={onOpenInfo}
