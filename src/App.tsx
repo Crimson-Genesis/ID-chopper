@@ -12,11 +12,10 @@ import {
   CropBox, 
   FilterSettings, 
   PrintLayoutFormat, 
-  RenderedPage,
   CachedCropItem
 } from './types/card';
 import { loadSingleAppFile, loadAppFiles } from './services/pdfService';
-import { applyFiltersToCanvas } from './services/imageFilterService';
+import { extractCanvasCropAsync } from './services/imageFilterService';
 import { generatePrintPdf, promptAndSavePdf } from './services/printLayoutService';
 import { FileUp } from 'lucide-react';
 
@@ -25,20 +24,6 @@ const DEFAULT_FILTERS: FilterSettings = {
   contrast: 0,
   sharpness: 0,
   mode: 'color',
-};
-
-const extractCanvasCrop = (
-  page: RenderedPage,
-  box: CropBox,
-  filters: FilterSettings
-): HTMLCanvasElement => {
-  const area = {
-    x: (box.x / 100) * page.width,
-    y: (box.y / 100) * page.height,
-    width: (box.width / 100) * page.width,
-    height: (box.height / 100) * page.height,
-  };
-  return applyFiltersToCanvas(page.canvas, area, filters);
 };
 
 export function App() {
@@ -54,6 +39,10 @@ export function App() {
   // Cached Crop Items (preserved across file switching, extracted only on file switch or print/export)
   const [cachedFront, setCachedFront] = useState<CachedCropItem | null>(null);
   const [cachedBack, setCachedBack] = useState<CachedCropItem | null>(null);
+
+  // Individual async saving states for smooth non-blocking loading animations
+  const [isSavingFront, setIsSavingFront] = useState<boolean>(false);
+  const [isSavingBack, setIsSavingBack] = useState<boolean>(false);
 
   const [hasBackSide, setHasBackSide] = useState<boolean>(true);
   const [lockRatio, setLockRatio] = useState<boolean>(true);
@@ -96,40 +85,16 @@ export function App() {
     }
   };
 
-  // Switch File: Save outgoing file's active crop boxes to cache, then switch and restore incoming
+  // Switch File: Switch immediately in UI, save outgoing crops asynchronously in background
   const handleSelectFile = (newFileId: string) => {
     if (newFileId === activeFileId) return;
 
-    // 1. Save outgoing active file's crops to cache
-    if (activeFile) {
-      if (frontBox && frontBox.fileId === activeFile.id) {
-        const page = activeFile.pages.find((p) => p.pageNumber === frontBox.pageNumber) || activeFile.pages[0];
-        const canvas = extractCanvasCrop(page, frontBox, filters);
-        setCachedFront({
-          fileId: activeFile.id,
-          fileName: activeFile.name,
-          pageNumber: frontBox.pageNumber,
-          box: frontBox,
-          canvas,
-          dataUrl: canvas.toDataURL('image/png'),
-        });
-      }
+    // 1. Snapshot outgoing file and active crop boxes
+    const outgoingFile = activeFile;
+    const outgoingFrontBox = frontBox && outgoingFile && frontBox.fileId === outgoingFile.id ? { ...frontBox } : null;
+    const outgoingBackBox = backBox && outgoingFile && backBox.fileId === outgoingFile.id ? { ...backBox } : null;
 
-      if (backBox && backBox.fileId === activeFile.id) {
-        const page = activeFile.pages.find((p) => p.pageNumber === backBox.pageNumber) || activeFile.pages[0];
-        const canvas = extractCanvasCrop(page, backBox, filters);
-        setCachedBack({
-          fileId: activeFile.id,
-          fileName: activeFile.name,
-          pageNumber: backBox.pageNumber,
-          box: backBox,
-          canvas,
-          dataUrl: canvas.toDataURL('image/png'),
-        });
-      }
-    }
-
-    // 2. Switch to new active file
+    // 2. Switch to new active file IMMEDIATELY (zero UI freeze)
     setActiveFileId(newFileId);
     setActivePageNum(1);
 
@@ -145,6 +110,63 @@ export function App() {
       setBackBox(cachedBack.box);
     } else {
       setBackBox(null);
+    }
+
+    // 4. Asynchronously extract outgoing crops in parallel background tasks with loading spinner
+    if (outgoingFile && outgoingFrontBox) {
+      setIsSavingFront(true);
+      (async () => {
+        try {
+          const page = outgoingFile.pages.find((p) => p.pageNumber === outgoingFrontBox.pageNumber) || outgoingFile.pages[0];
+          const { canvas, dataUrl } = await extractCanvasCropAsync(
+            page.canvas,
+            page.width,
+            page.height,
+            outgoingFrontBox,
+            filters
+          );
+          setCachedFront({
+            fileId: outgoingFile.id,
+            fileName: outgoingFile.name,
+            pageNumber: outgoingFrontBox.pageNumber,
+            box: outgoingFrontBox,
+            canvas,
+            dataUrl,
+          });
+        } catch (err) {
+          console.error('Failed to async save front crop:', err);
+        } finally {
+          setIsSavingFront(false);
+        }
+      })();
+    }
+
+    if (outgoingFile && outgoingBackBox) {
+      setIsSavingBack(true);
+      (async () => {
+        try {
+          const page = outgoingFile.pages.find((p) => p.pageNumber === outgoingBackBox.pageNumber) || outgoingFile.pages[0];
+          const { canvas, dataUrl } = await extractCanvasCropAsync(
+            page.canvas,
+            page.width,
+            page.height,
+            outgoingBackBox,
+            filters
+          );
+          setCachedBack({
+            fileId: outgoingFile.id,
+            fileName: outgoingFile.name,
+            pageNumber: outgoingBackBox.pageNumber,
+            box: outgoingBackBox,
+            canvas,
+            dataUrl,
+          });
+        } catch (err) {
+          console.error('Failed to async save back crop:', err);
+        } finally {
+          setIsSavingBack(false);
+        }
+      })();
     }
   };
 
@@ -234,90 +256,97 @@ export function App() {
     setCachedBack(null);
   };
 
-  // On-demand extraction helpers (called ONLY when printing or downloading)
-  const getOrCreateFrontCrop = (): CachedCropItem | null => {
-    if (frontBox && activeFile && frontBox.fileId === activeFile.id) {
-      const page = activeFile.pages.find((p) => p.pageNumber === frontBox.pageNumber) || activeFile.pages[0];
-      const canvas = extractCanvasCrop(page, frontBox, filters);
-      const item: CachedCropItem = {
-        fileId: activeFile.id,
-        fileName: activeFile.name,
-        pageNumber: frontBox.pageNumber,
-        box: frontBox,
-        canvas,
-        dataUrl: canvas.toDataURL('image/png'),
-      };
-      setCachedFront(item);
-      return item;
-    }
-    if (cachedFront) {
-      const srcFile = files.find((f) => f.id === cachedFront.fileId);
-      if (srcFile) {
-        const page = srcFile.pages.find((p) => p.pageNumber === cachedFront.pageNumber) || srcFile.pages[0];
-        const canvas = extractCanvasCrop(page, cachedFront.box, filters);
-        const item: CachedCropItem = {
-          ...cachedFront,
-          canvas,
-          dataUrl: canvas.toDataURL('image/png'),
-        };
-        setCachedFront(item);
-        return item;
-      }
-    }
-    return cachedFront;
-  };
+  // On-demand async extraction helper for Export PDF and Print
+  const ensureFreshCropsAsync = async () => {
+    let finalFrontCanvas: HTMLCanvasElement | null = cachedFront?.canvas || null;
+    let finalBackCanvas: HTMLCanvasElement | null = cachedBack?.canvas || null;
 
-  const getOrCreateBackCrop = (): CachedCropItem | null => {
-    if (backBox && activeFile && backBox.fileId === activeFile.id) {
-      const page = activeFile.pages.find((p) => p.pageNumber === backBox.pageNumber) || activeFile.pages[0];
-      const canvas = extractCanvasCrop(page, backBox, filters);
-      const item: CachedCropItem = {
-        fileId: activeFile.id,
-        fileName: activeFile.name,
-        pageNumber: backBox.pageNumber,
-        box: backBox,
-        canvas,
-        dataUrl: canvas.toDataURL('image/png'),
-      };
-      setCachedBack(item);
-      return item;
+    const tasks: Promise<void>[] = [];
+
+    if (frontBox && activeFile && frontBox.fileId === activeFile.id) {
+      setIsSavingFront(true);
+      tasks.push(
+        (async () => {
+          try {
+            const page = activeFile.pages.find((p) => p.pageNumber === frontBox.pageNumber) || activeFile.pages[0];
+            const { canvas, dataUrl } = await extractCanvasCropAsync(
+              page.canvas,
+              page.width,
+              page.height,
+              frontBox,
+              filters
+            );
+            finalFrontCanvas = canvas;
+            setCachedFront({
+              fileId: activeFile.id,
+              fileName: activeFile.name,
+              pageNumber: frontBox.pageNumber,
+              box: frontBox,
+              canvas,
+              dataUrl,
+            });
+          } finally {
+            setIsSavingFront(false);
+          }
+        })()
+      );
     }
-    if (cachedBack) {
-      const srcFile = files.find((f) => f.id === cachedBack.fileId);
-      if (srcFile) {
-        const page = srcFile.pages.find((p) => p.pageNumber === cachedBack.pageNumber) || srcFile.pages[0];
-        const canvas = extractCanvasCrop(page, cachedBack.box, filters);
-        const item: CachedCropItem = {
-          ...cachedBack,
-          canvas,
-          dataUrl: canvas.toDataURL('image/png'),
-        };
-        setCachedBack(item);
-        return item;
-      }
+
+    if (hasBackSide && backBox && activeFile && backBox.fileId === activeFile.id) {
+      setIsSavingBack(true);
+      tasks.push(
+        (async () => {
+          try {
+            const page = activeFile.pages.find((p) => p.pageNumber === backBox.pageNumber) || activeFile.pages[0];
+            const { canvas, dataUrl } = await extractCanvasCropAsync(
+              page.canvas,
+              page.width,
+              page.height,
+              backBox,
+              filters
+            );
+            finalBackCanvas = canvas;
+            setCachedBack({
+              fileId: activeFile.id,
+              fileName: activeFile.name,
+              pageNumber: backBox.pageNumber,
+              box: backBox,
+              canvas,
+              dataUrl,
+            });
+          } finally {
+            setIsSavingBack(false);
+          }
+        })()
+      );
     }
-    return cachedBack;
+
+    if (tasks.length > 0) {
+      await Promise.all(tasks);
+    }
+
+    return { finalFrontCanvas, finalBackCanvas };
   };
 
   // Export PDF with Location Picker Prompt
   const handleExportPdf = async () => {
-    const finalFront = getOrCreateFrontCrop();
-    const finalBack = getOrCreateBackCrop();
-
-    if (!finalFront) {
-      alert('Please select at least a Front crop box before exporting.');
-      return;
-    }
     try {
       setIsGeneratingPdf(true);
+      const { finalFrontCanvas, finalBackCanvas } = await ensureFreshCropsAsync();
+
+      if (!finalFrontCanvas) {
+        alert('Please select at least a Front crop box before exporting.');
+        return;
+      }
+
       const cleanTitle = selectedPreset.shortName.replace(/[^a-zA-Z0-9_-]/g, '_');
       const defaultFilename = `${cleanTitle}_print_ready_${selectedFormat}.pdf`;
 
       await promptAndSavePdf(
         () =>
           generatePrintPdf(
-            finalFront.canvas,
-            hasBackSide && finalBack ? finalBack.canvas : null,
+            finalFrontCanvas!,
+            hasBackSide && finalBackCanvas ? finalBackCanvas : null,
             selectedFormat,
             selectedPreset.shortName,
             selectedPreset.dimensions
@@ -334,15 +363,14 @@ export function App() {
 
   // Browser Print Directly
   const handleBrowserPrint = async () => {
-    const finalFront = getOrCreateFrontCrop();
-    const finalBack = getOrCreateBackCrop();
-    if (!finalFront) return;
-
     try {
       setIsGeneratingPdf(true);
+      const { finalFrontCanvas, finalBackCanvas } = await ensureFreshCropsAsync();
+      if (!finalFrontCanvas) return;
+
       const doc = await generatePrintPdf(
-        finalFront.canvas,
-        hasBackSide && finalBack ? finalBack.canvas : null,
+        finalFrontCanvas,
+        hasBackSide && finalBackCanvas ? finalBackCanvas : null,
         selectedFormat,
         selectedPreset.shortName,
         selectedPreset.dimensions
@@ -367,26 +395,86 @@ export function App() {
   };
 
   // Download Individual PNGs
-  const handleDownloadPng = (target: 'front' | 'back') => {
+  const handleDownloadPng = async (target: 'front' | 'back') => {
     if (target === 'front') {
-      const finalFront = getOrCreateFrontCrop();
-      if (!finalFront) return;
-      const link = document.createElement('a');
-      link.href = finalFront.dataUrl;
-      link.download = `${selectedPreset.shortName}_Front_Card_300DPI.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (frontBox && activeFile && frontBox.fileId === activeFile.id) {
+        setIsSavingFront(true);
+        try {
+          const page = activeFile.pages.find((p) => p.pageNumber === frontBox.pageNumber) || activeFile.pages[0];
+          const { canvas, dataUrl } = await extractCanvasCropAsync(
+            page.canvas,
+            page.width,
+            page.height,
+            frontBox,
+            filters
+          );
+          setCachedFront({
+            fileId: activeFile.id,
+            fileName: activeFile.name,
+            pageNumber: frontBox.pageNumber,
+            box: frontBox,
+            canvas,
+            dataUrl,
+          });
+          const link = document.createElement('a');
+          link.href = dataUrl;
+          link.download = `${selectedPreset.shortName}_Front_Card_300DPI.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (err) {
+          console.error('Download error:', err);
+        } finally {
+          setIsSavingFront(false);
+        }
+      } else if (cachedFront) {
+        const link = document.createElement('a');
+        link.href = cachedFront.dataUrl;
+        link.download = `${selectedPreset.shortName}_Front_Card_300DPI.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     }
     if (target === 'back') {
-      const finalBack = getOrCreateBackCrop();
-      if (!finalBack) return;
-      const link = document.createElement('a');
-      link.href = finalBack.dataUrl;
-      link.download = `${selectedPreset.shortName}_Back_Card_300DPI.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (backBox && activeFile && backBox.fileId === activeFile.id) {
+        setIsSavingBack(true);
+        try {
+          const page = activeFile.pages.find((p) => p.pageNumber === backBox.pageNumber) || activeFile.pages[0];
+          const { canvas, dataUrl } = await extractCanvasCropAsync(
+            page.canvas,
+            page.width,
+            page.height,
+            backBox,
+            filters
+          );
+          setCachedBack({
+            fileId: activeFile.id,
+            fileName: activeFile.name,
+            pageNumber: backBox.pageNumber,
+            box: backBox,
+            canvas,
+            dataUrl,
+          });
+          const link = document.createElement('a');
+          link.href = dataUrl;
+          link.download = `${selectedPreset.shortName}_Back_Card_300DPI.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } catch (err) {
+          console.error('Download error:', err);
+        } finally {
+          setIsSavingBack(false);
+        }
+      } else if (cachedBack) {
+        const link = document.createElement('a');
+        link.href = cachedBack.dataUrl;
+        link.download = `${selectedPreset.shortName}_Back_Card_300DPI.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     }
   };
 
@@ -417,7 +505,7 @@ export function App() {
           onFormatChange={setSelectedFormat}
           onExportPdf={handleExportPdf}
           onBrowserPrint={handleBrowserPrint}
-          isGeneratingPdf={isGeneratingPdf}
+          isGeneratingPdf={isGeneratingPdf || isSavingFront || isSavingBack}
           frontCropFileId={frontBox?.fileId || cachedFront?.fileId}
           backCropFileId={backBox?.fileId || cachedBack?.fileId}
           hasFrontCrop={Boolean(frontBox || cachedFront)}
@@ -475,6 +563,8 @@ export function App() {
                   hasBackSide={hasBackSide}
                   selectedPreset={selectedPreset}
                   onDownloadPng={handleDownloadPng}
+                  isSavingFront={isSavingFront}
+                  isSavingBack={isSavingBack}
                 />
               </div>
             </>

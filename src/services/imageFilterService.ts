@@ -142,3 +142,35 @@ function applySharpenKernel(canvas: HTMLCanvasElement, strength: number): HTMLCa
   outCtx.putImageData(dstData, 0, 0);
   return outputCanvas;
 }
+
+export async function extractCanvasCropAsync(
+  sourceCanvas: HTMLCanvasElement,
+  pageWidth: number,
+  pageHeight: number,
+  box: { x: number; y: number; width: number; height: number },
+  filters: FilterSettings
+): Promise<{ canvas: HTMLCanvasElement; dataUrl: string }> {
+  // Yield execution to the browser to ensure loading states render first
+  await new Promise((resolve) => setTimeout(resolve, 16));
+
+  const area = {
+    x: (box.x / 100) * pageWidth,
+    y: (box.y / 100) * pageHeight,
+    width: (box.width / 100) * pageWidth,
+    height: (box.height / 100) * pageHeight,
+  };
+
+  const canvas = applyFiltersToCanvas(sourceCanvas, area, filters);
+
+  const dataUrl = await new Promise<string>((resolve) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(URL.createObjectURL(blob));
+      } else {
+        resolve(canvas.toDataURL('image/png'));
+      }
+    }, 'image/png');
+  });
+
+  return { canvas, dataUrl };
+}

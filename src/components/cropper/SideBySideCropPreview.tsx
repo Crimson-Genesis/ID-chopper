@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { AppFile, CropBox, CardPreset, CachedCropItem, FilterSettings } from '../../types/card';
-import { Download, CreditCard, Sparkles, FileText } from 'lucide-react';
+import { Download, CreditCard, Sparkles, FileText, Loader2 } from 'lucide-react';
 
 interface SideBySideCropPreviewProps {
   activeFile: AppFile | null;
@@ -12,6 +12,8 @@ interface SideBySideCropPreviewProps {
   hasBackSide: boolean;
   selectedPreset: CardPreset;
   onDownloadPng: (target: 'front' | 'back') => void;
+  isSavingFront: boolean;
+  isSavingBack: boolean;
 }
 
 interface PreviewCardProps {
@@ -24,6 +26,7 @@ interface PreviewCardProps {
   filters: FilterSettings;
   selectedPreset: CardPreset;
   onDownload: () => void;
+  isSaving: boolean;
 }
 
 const PreviewCard: React.FC<PreviewCardProps> = ({
@@ -36,6 +39,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({
   filters,
   selectedPreset,
   onDownload,
+  isSaving,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -92,7 +96,15 @@ const PreviewCard: React.FC<PreviewCardProps> = ({
           <span>{title}</span>
         </span>
 
-        {isLive && activeFile && activeBox ? (
+        {isSaving ? (
+          <span className="text-[10px] text-zinc-400 font-mono flex items-center space-x-1.5 truncate max-w-[220px]">
+            <FileText className="w-3 h-3 text-zinc-500 flex-shrink-0" />
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-sans uppercase font-bold tracking-wider animate-pulse flex items-center">
+              <Loader2 className="w-2.5 h-2.5 animate-spin mr-1 text-white" />
+              Saving
+            </span>
+          </span>
+        ) : isLive && activeFile && activeBox ? (
           <span className="text-[10px] text-zinc-400 font-mono flex items-center space-x-1.5 truncate max-w-[220px]">
             <FileText className="w-3 h-3 text-zinc-500 flex-shrink-0" />
             <span className="truncate">{activeFile.name} (P{activeBox.pageNumber})</span>
@@ -114,7 +126,7 @@ const PreviewCard: React.FC<PreviewCardProps> = ({
       {/* Card Aspect Container */}
       <div 
         style={{ aspectRatio: presetRatio }}
-        className="w-full rounded-xl overflow-hidden shadow-xl border border-zinc-700 bg-zinc-950 flex items-center justify-center p-1"
+        className="relative w-full rounded-xl overflow-hidden shadow-xl border border-zinc-700 bg-zinc-950 flex items-center justify-center p-1"
       >
         {isLive ? (
           <canvas
@@ -137,16 +149,42 @@ const PreviewCard: React.FC<PreviewCardProps> = ({
             </span>
           </div>
         )}
+
+        {/* Smooth Non-blocking Saving Animation Overlay */}
+        {isSaving && (
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center space-y-2 p-3 transition-all duration-200">
+            <div className="p-2 rounded-full bg-zinc-900 border border-zinc-750 shadow-lg">
+              <Loader2 className="w-5 h-5 animate-spin text-white" />
+            </div>
+            <div className="text-center space-y-0.5">
+              <span className="text-xs font-bold text-white tracking-wide block">
+                Saving to Cache
+              </span>
+              <span className="text-[10px] text-zinc-400 font-mono block">
+                Background processing...
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Download Action */}
       <button
         onClick={onDownload}
-        disabled={!hasCrop}
+        disabled={!hasCrop || isSaving}
         className="w-full py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white disabled:opacity-40 text-xs font-medium border border-zinc-800 transition-colors flex items-center justify-center space-x-1.5"
       >
-        <Download className="w-3.5 h-3.5" />
-        <span>Download {isFront ? 'Front' : 'Back'} PNG</span>
+        {isSaving ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+            <span>Processing...</span>
+          </>
+        ) : (
+          <>
+            <Download className="w-3.5 h-3.5" />
+            <span>Download {isFront ? 'Front' : 'Back'} PNG</span>
+          </>
+        )}
       </button>
     </div>
   );
@@ -162,6 +200,8 @@ export const SideBySideCropPreview: React.FC<SideBySideCropPreviewProps> = ({
   hasBackSide,
   selectedPreset,
   onDownloadPng,
+  isSavingFront,
+  isSavingBack,
 }) => {
   return (
     <div className="rounded-2xl bg-zinc-900/90 border border-zinc-800 p-4 space-y-3">
@@ -190,6 +230,7 @@ export const SideBySideCropPreview: React.FC<SideBySideCropPreviewProps> = ({
           filters={filters}
           selectedPreset={selectedPreset}
           onDownload={() => onDownloadPng('front')}
+          isSaving={isSavingFront}
         />
 
         {/* Back Card Preview */}
@@ -204,6 +245,7 @@ export const SideBySideCropPreview: React.FC<SideBySideCropPreviewProps> = ({
             filters={filters}
             selectedPreset={selectedPreset}
             onDownload={() => onDownloadPng('back')}
+            isSaving={isSavingBack}
           />
         ) : (
           <div className="p-3.5 rounded-xl bg-black/40 border border-dashed border-zinc-800 flex flex-col items-center justify-center text-center p-6 text-xs text-zinc-500 space-y-2">
